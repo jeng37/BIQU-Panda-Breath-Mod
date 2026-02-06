@@ -3,14 +3,14 @@ import asyncio, ssl, json, time, requests, websockets, os
 import logging
 
 # ==========================================
-# KONFIGURATION
+# KONFIGURATION (Bleibt gleich)
 # ==========================================
-HOST_IP = "192.168.x.xxx" 
-PANDA_IP = "192.168.x.xxx"
+HOST_IP = "192.168.8.174" 
+PANDA_IP = "192.168.8.142"
 PRINTER_SN = "01P00A123456789"
 ACCESS_CODE = "01P00A12"
-HA_URL = "http://192.168.x.xxx:8123/api/states/sensor.ks1c_bed_temperature"
-HA_TOKEN = ""
+HA_URL = "http://192.168.8.195:8123/api/states/sensor.ks1c_bed_temperature"
+HA_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJmZjg4NzFjOTRiMTc0OTJlYTE4MWVhNDY1YmI5M2JjNiIsImlhdCI6MTc3MDI5OTE1OSwiZXhwIjoyMDg1NjU5MTU5fQ.Biu6Ood1bH-xMBHQnfRFE6h2yiFMWWywTfCnFmji61o"
 # ==========================================
 
 logging.basicConfig(level=logging.CRITICAL)
@@ -18,7 +18,7 @@ logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 
 current_data = {"kammer_soll": 40.0, "kammer_ist": 0.0, "bett_limit": 50.0} 
 panda_connected = False
-terminal_cleared = False # Merker für das Aufräumen
+terminal_cleared = False
 ha_session = requests.Session()
 ha_session.headers.update({"Authorization": f"Bearer {HA_TOKEN}"})
 
@@ -62,7 +62,6 @@ async def handle_panda(reader, writer):
     global panda_connected, terminal_cleared
     panda_connected = True
     
-    # Sobald die Verbindung steht: Terminal säubern
     if not terminal_cleared:
         os.system('cls' if os.name == 'nt' else 'clear')
         print(f"✅ Verbindung hergestellt! Panda Breath wird gesteuert...\n")
@@ -86,14 +85,16 @@ async def handle_panda(reader, writer):
                 ist_temp = current_data["kammer_ist"]
                 safety_limit = current_data["bett_limit"]
                 
+                # --- KORRIGIERTE LOGIK ---
                 if real_bed_temp < safety_limit:
                     send_val, info = 20.0, f"Bett < {safety_limit}°C"
-                elif ist_temp >= target:
-                    send_val, info = 85.0, f"Ziel {target}°C erreicht"
                 elif ist_temp <= (target - 1.0):
-                    send_val, info = 20.0, f"Heize auf {target}°C"
+                    send_val, info = 85.0, f"Heize auf {target}°C" # 85 = EIN
+                elif ist_temp >= target:
+                    send_val, info = 20.0, f"Ziel {target}°C erreicht" # 20 = AUS
                 else:
                     send_val, info = last_val, "Hysterese aktiv"
+                # -------------------------
 
                 last_val = send_val
                 icon = "🔥 EIN" if send_val > 50 else "❄️ AUS"
@@ -117,11 +118,8 @@ async def main():
     ssl_ctx.load_cert_chain(certfile="cert.pem", keyfile="key.pem")
     ssl_ctx.set_ciphers('DEFAULT@SECLEVEL=1') 
     server = await asyncio.start_server(handle_panda, '0.0.0.0', 8883, ssl=ssl_ctx)
-    
-    # Startanzeige
     print(f"\n🚀 Panda-Logic-Sync aktiv auf {HOST_IP}")
     print(f"👉 BITTE 'BIND' IN DER PANDA WEB-UI DRÜCKEN...\n")
-    
     async with server: await server.serve_forever()
 
 if __name__ == "__main__":
