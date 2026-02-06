@@ -26,6 +26,12 @@ cd BIQU-Panda-Breath-Mod
 # Abhängigkeiten installieren
 pip install -r requirements.txt
 
+# SSL-Zertifikate generieren
+Die Hardware benötigt eine verschlüsselte Verbindung. Nutze das mitgelieferte Hilfsskript:
+
+chmod +x cert_gen.sh
+./cert_gen.sh
+
 # Panda.py configuration
 nano Panda.py
 
