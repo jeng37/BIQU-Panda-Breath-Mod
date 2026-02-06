@@ -20,7 +20,7 @@ Das Host-System (Server/PC) muss sich im **selben Netzwerk** wie die Panda Breat
 
 ```bash
 # Repository klonen
-git clone [https://github.com/DEIN_USER/BIQU-Panda-Breath-Mod.git](https://github.com/DEIN_USER/BIQU-Panda-Breath-Mod.git)
+git clone https://github.com/DEIN_USER/BIQU-Panda-Breath-Mod.git
 cd BIQU-Panda-Breath-Mod
 
 # Abhängigkeiten installieren
