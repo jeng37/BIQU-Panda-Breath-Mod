@@ -10,12 +10,12 @@ DEBUG_TO_FILE = True
 HYSTERESE = 1.5         # Erst wieder ein, wenn 1.5 Grad unter Soll gefallen
 MIN_SWITCH_TIME = 10    # Mindestpause für das Relais in Sekunden
 
-HOST_IP = "192.168.8.174" 
-PANDA_IP = "192.168.8.142"
+HOST_IP = "192.168.x.xxx" 
+PANDA_IP = "192.168.x.xxx"
 PRINTER_SN = "01P00A123456789"
 ACCESS_CODE = "01P00A12"
-HA_URL = "http://192.168.8.195:8123/api/states/sensor.ks1c_bed_temperature"
-HA_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJmZjg4NzFjOTRiMTc0OTJlYTE4MWVhNDY1YmI5M2JjNiIsImlhdCI6MTc3MDI5OTE1OSwiZXhwIjoyMDg1NjU5MTU5fQ.Biu6Ood1bH-xMBHQnfRFE6h2yiFMWWywTfCnFmji61o"
+HA_URL = "http://192.168.x.xxx:8123/api/states/sensor.ks1c_bed_temperature"
+HA_TOKEN = "aklfjlafjöaföafka...."
 # ==========================================
 
 # Globale Zustandsvariablen (überleben Reconnects)
