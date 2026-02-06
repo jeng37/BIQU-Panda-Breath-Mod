@@ -1,0 +1,58 @@
+Dokumentation: Panda-Logic-Sync Steuerung
+  
+1. Installation der Python-Abhängigkeiten
+Installiere die notwendigen Module auf deinem Host-System (Server/PC), auf dem das Skript laufen soll:
+
+# Systempakete aktualisieren
+sudo apt update
+# Pip und notwendige Module installieren
+sudo apt install python3-pip -y
+pip install asyncio websockets requests
+
+2. SSL-Zertifikate generieren
+Die Hardware benötigt eine verschlüsselte Verbindung via Port 8883. Erzeuge die Zertifikate im selben Verzeichnis, in dem dein Skript liegt:
+
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -sha256 -days 3650 -nodes -subj "/C=DE/ST=Panda/L=Panda/O=Bambu/OU=Printer/CN=bambulab.local"
+oder benutze cert_gen.sh
+  
+3. Home Assistant & Moonraker Integration
+Die Temperaturdaten werden von deinem 3D-Drucker bereitgestellt. Moonraker sendet diese an Home Assistant, wo sie als Sensor-Entität (z. B. sensor.ks1c_bed_temperature) verfügbar sind.
+
+Moonraker Plugin für HA: https://moonraker-home-assistant.readthedocs.io/en/latest/
+
+Erklärung: HA-Token (Long-Lived Access Token)
+Der HA_TOKEN im Skript ist dein langlebiger Sicherheitsschlüssel. Er ermöglicht dem Skript den autorisierten Zugriff auf die Temperaturdaten von Home Assistant.
+
+Erstellung: In Home Assistant: Profil -> Ganz nach unten zu "Langlebige Zugriffstoken" -> Erstellen.
+
+4. Netzwerk-Konfiguration & IP-Adressen
+Wichtige Netzwerkanforderung:
+Das Host-System (PC/Server) und die Panda-Heizung müssen sich zwingend im selben lokalen Netzwerk (Subnetz) befinden. Eine Kommunikation über unterschiedliche Netzwerke hinweg ist aufgrund der verwendeten Protokolle (MQTT/WebSocket) ohne komplexes Routing nicht möglich.
+
+Konfiguration im Skript:
+Im Skript wird die Variable HOST_IP definiert:
+
+HOST_IP: Dies ist die statische IP-Adresse des Rechners, auf dem das Skript läuft (Beispiel: 192.168.x.xxx).
+
+Die Heizung verbindet sich mit dieser IP, da sie das Skript für einen echten Drucker hält.
+
+Statische IP: Es wird dringend empfohlen, dem Rechner im Router eine feste IP zuzuweisen, damit die Verbindung nach einem Neustart stabil bleibt.
+
+5. Bedienung der Web-Oberfläche (Panda Web-UI)
+Work Mode: Stelle das Gerät auf "Auto Mode". Nur dann reagiert die Hardware auf die externen Daten des Skripts.
+
+Drucker-IP: Trage hier die IP-Adresse deines Host-Systems ein (die HOST_IP aus dem Skript).
+
+SN & Code: Nutze die im Skript hinterlegten Werte (Standard-SN: 01P00A123456789).
+
+6. Logik & Live-Monitor
+Das Skript bietet einen Live-Status im Terminal, der die Steuerung transparent macht:
+
+📊 HA-Bed-Sensor: 61.0°C | Kammer Soll Temp: 50.0°C | Relais: 🔥 EIN | ...
+
+HA-Bed-Sensor: Der reale Wert deines Druckbetts (via Moonraker -> HA).
+
+Kammer Soll Temp: Der Zielwert, den du live in der Web-UI der Heizung anpassen kannst.
+
+Sicherheits-Priorität: Fällt der HA-Bed-Sensor unter 50°C, erzwingt das Skript sofort den Zustand ❄️ AUS, um die Heizung nach Druckende sicher abzuschalten.
+
