@@ -229,7 +229,10 @@ async def main():
     ssl_ctx.load_cert_chain(certfile="cert.pem", keyfile="key.pem")
     ssl_ctx.set_ciphers('DEFAULT@SECLEVEL=1') 
     server = await asyncio.start_server(handle_panda, '0.0.0.0', 8883, ssl=ssl_ctx)
-    log_event("🚀 V5.1 gestartet. Heiz Status Fix aktiv.", force_console=True)
+    print(f"\n🚀 Panda-Logic-Sync V1.5")
+    print(f"👉 BITTE 'BIND' DRÜCKEN FÜR START...\n")
+
+    log_event("🚀 V1.5 gestartet.", force_console=True)
     async with server: await server.serve_forever()
 
 if __name__ == "__main__":
