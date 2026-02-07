@@ -106,8 +106,9 @@ Sobald der Button zu Unbind wechselt, ist die Verbindung aktiv und die Panda Bre
 Home Assistant Dashboard (Beispiel)
 
 <img width="1835" height="836" alt="image" src="https://github.com/user-attachments/assets/1b1b7d8a-9fc1-4e6f-ab15-3ba944f3f9ea" />
-<img width="816" height="272" alt="image" src="https://github.com/user-attachments/assets/6f52d599-dcf1-438e-83e6-36063c1b9806" />
-<img width="1381" height="639" alt="image" src="https://github.com/user-attachments/assets/7e74c9cd-e9bd-4530-a02d-36db646d3434" />
+<img width="792" height="449" alt="image" src="https://github.com/user-attachments/assets/90d64e87-a897-43da-98b1-40d9bb3744b2" />
+<img width="1069" height="840" alt="image" src="https://github.com/user-attachments/assets/72258e1e-06aa-4c5c-93d3-575d843aae0a" />
+
 
 Live-Terminal-Monitor
 
