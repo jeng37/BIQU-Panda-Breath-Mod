@@ -1,42 +1,82 @@
 #!/usr/bin/env python3
 import asyncio, ssl, json, time, requests, websockets, os
 import logging
+import paho.mqtt.client as mqtt
 
 # ==========================================
 # KONFIGURATION
 # ==========================================
 DEBUG = False
 DEBUG_TO_FILE = True 
-HYSTERESE = 1.5         # Erst wieder ein, wenn 1.5 Grad unter Soll gefallen
-MIN_SWITCH_TIME = 10    # Mindestpause für das Relais in Sekunden
+
+MQTT_BROKER = "192.168.x.xxx"
+MQTT_PORT = 1883
+MQTT_USER = "mqtt-user"
+MQTT_PASS = "mqtt-password"
+MQTT_TOPIC_PREFIX = "panda_breath"
 
 HOST_IP = "192.168.x.xxx" 
 PANDA_IP = "192.168.x.xxx"
 PRINTER_SN = "01P00A123456789"
 ACCESS_CODE = "01P00A12"
 HA_URL = "http://192.168.x.xxx:8123/api/states/sensor.ks1c_bed_temperature"
-HA_TOKEN = "aklfjlafjöaföafka...."
+HA_TOKEN = ""
+
+HYSTERESE = 1.5
+MIN_SWITCH_TIME = 10
 # ==========================================
 
-# Globale Zustandsvariablen (überleben Reconnects)
 current_data = {"kammer_soll": 40.0, "kammer_ist": 0.0, "bett_limit": 50.0} 
-global_heating_state = 20.0  # 20.0 = AUS, 85.0 = EIN
+global_heating_state = 20.0
 last_switch_time = 0
-panda_connected = False
-terminal_cleared = False
+terminal_ready = False
 
-# Logging Setup
-logging.basicConfig(level=logging.CRITICAL)
-logger = logging.getLogger("PandaDebug")
-if DEBUG_TO_FILE:
-    file_handler = logging.FileHandler('panda_debug.log')
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-    logger.addHandler(file_handler)
-    logger.setLevel(logging.INFO)
+mqtt_client = mqtt.Client(client_id=f"PandaMod_{PRINTER_SN}")
 
-def log_debug(msg):
-    if DEBUG: print(f"{msg}")
-    if DEBUG_TO_FILE: logger.info(msg)
+# --- MQTT LOGIK ---
+def on_mqtt_message(client, userdata, msg):
+    global current_data
+    try:
+        payload = float(msg.payload.decode())
+        if "soll/set" in msg.topic:
+            current_data["kammer_soll"] = payload
+        elif "limit/set" in msg.topic:
+            current_data["bett_limit"] = payload
+    except: pass
+
+def setup_mqtt_discovery():
+    try:
+        mqtt_client.username_pw_set(MQTT_USER, MQTT_PASS)
+        mqtt_client.on_message = on_mqtt_message
+        mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        mqtt_client.subscribe(f"{MQTT_TOPIC_PREFIX}/+/set")
+        mqtt_client.loop_start()
+
+        base = MQTT_TOPIC_PREFIX
+        disc = "homeassistant"
+        device = {"identifiers": [f"panda_{PRINTER_SN}"], "name": "Panda Breath Mod", "manufacturer": "Biqu", "model": "V2.5"}
+
+        for suffix, name, mini, maxi in [("soll", "Kammer Soll", 20, 75), ("limit", "Bett Limit", 30, 80)]:
+            config = {
+                "name": name,
+                "state_topic": f"{base}/{suffix}",
+                "command_topic": f"{base}/{suffix}/set",
+                "unique_id": f"panda_{PRINTER_SN}_{suffix}",
+                "unit_of_measurement": "°C",
+                "min": mini, "max": maxi, "step": 1,
+                "mode": "box", # Zeigt Slider UND Eingabefeld in HA
+                "device": device
+            }
+            mqtt_client.publish(f"{disc}/number/panda_{suffix}/config", json.dumps(config), retain=True)
+            
+        mqtt_client.publish(f"{disc}/sensor/panda_ist/config", json.dumps({
+            "name": "Kammer Ist", "state_topic": f"{base}/ist", "unit_of_measurement": "°C", 
+            "device_class": "temperature", "unique_id": f"panda_{PRINTER_SN}_ist", "device": device
+        }), retain=True)
+        mqtt_client.publish(f"{disc}/sensor/panda_status/config", json.dumps({
+            "name": "Heiz Status", "state_topic": f"{base}/status", "unique_id": f"panda_{PRINTER_SN}_status", "device": device
+        }), retain=True)
+    except: pass
 
 def create_packet(temp):
     effective_target = 100.0 if temp > 50 else 0.0
@@ -75,8 +115,8 @@ async def update_limits_from_ws():
         except: await asyncio.sleep(5)
 
 async def handle_panda(reader, writer):
-    global panda_connected, terminal_cleared, last_switch_time, global_heating_state
-    panda_connected = True
+    global last_switch_time, global_heating_state, terminal_ready
+    setup_mqtt_discovery()
     
     try:
         await reader.read(1024)
@@ -87,72 +127,64 @@ async def handle_panda(reader, writer):
             writer.write(b'\x90\x03' + sub_data[2:4] + b'\x00')
             await writer.drain()
 
-        # Beim ersten BIND entscheiden: Wenn wir deutlich unter Soll sind, heizen wir sofort los
-        if current_data["kammer_ist"] < (current_data["kammer_soll"] - 0.2):
-            global_heating_state = 85.0
-
         while not writer.is_closing():
             try:
                 h_resp = requests.get(HA_URL, headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=3)
                 real_bed_temp = float(h_resp.json()['state'])
-                target = current_data["kammer_soll"]
-                ist = current_data["kammer_ist"]
-                limit = current_data["bett_limit"]
+                target, ist, limit = current_data["kammer_soll"], current_data["kammer_ist"], current_data["bett_limit"]
                 
                 now = time.time()
                 can_switch = (now - last_switch_time) > MIN_SWITCH_TIME
-                
-                # --- STRRENGERE TARGET-LOGIK ---
                 target_state = global_heating_state
                 
+                # --- LOGIK ---
                 if real_bed_temp < limit:
-                    target_state, info = 20.0, "SICHERHEIT: Bett-Stop"
-                elif ist >= target:
-                    # Schaltet ERST aus, wenn Ziel wirklich erreicht
-                    target_state, info = 20.0, "Ziel erreicht (100%)"
-                elif ist <= (target - HYSTERESE):
-                    # Schaltet wieder ein, wenn zu weit abgekühlt
+                    target_state, info = 20.0, "Bett-Stop"
+                elif ist >= target and ist > 0:
+                    target_state, info = 20.0, "Ziel erreicht"
+                elif ist <= (target - HYSTERESE) and ist > 0:
                     target_state, info = 85.0, "Heizen aktiv..."
                 else:
-                    # Bleibt im aktuellen Modus (heizt also weiter bis Ziel erreicht ist)
-                    info = "Hysterese aktiv"
+                    info = "Hysterese aktiv" if ist > 0 else "Warten auf Sensor..."
 
-                # --- SCHALTPRÜFUNG ---
                 if target_state != global_heating_state:
                     if can_switch or (target_state == 20.0 and real_bed_temp < limit):
-                        global_heating_state = target_state
-                        last_switch_time = now
+                        global_heating_state, last_switch_time = target_state, now
                     else:
-                        info += " (Sperrzeit-Schutz)"
+                        info += " (Sperrzeit)"
 
+                # MQTT
+                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/ist", ist)
+                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/soll", target)
+                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/limit", limit)
+                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/status", info)
+
+                # TERMINAL OUTPUT
                 icon = "🔥 EIN" if global_heating_state > 50 else "❄️ AUS"
-                line = f"\r🟢 ONLINE | Bed:{real_bed_temp}° | Kammer:{target}/{ist}° | {icon} | {info}"
+                ist_str = f"{ist}°" if ist > 0 else "??.?"
+                line = f"\r🟢 ONLINE | Bed:{real_bed_temp}° | Kammer:{target}/{ist_str} | {icon} | {info}"
                 
                 if not DEBUG:
-                    if not terminal_cleared:
-                        os.system('cls' if os.name == 'nt' else 'clear')
-                        terminal_cleared = True
-                    print(f"{line[:110].ljust(110)}", end="", flush=True)
-                else:
-                    log_debug(line.strip())
+                    print(f"{line[:115].ljust(115)}", end="", flush=True)
 
                 writer.write(create_packet(global_heating_state))
                 await writer.drain()
-            except (ConnectionResetError, BrokenPipeError): break
-            except Exception as e: log_debug(f"[LOOP-ERR] {e}")
+            except: break
             await asyncio.sleep(2)
     finally:
-        panda_connected = False
         writer.close()
 
 async def main():
+    # Terminal einmalig beim Start löschen
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(f"🚀 Panda-Logic-Sync V2.5 (Broker: {MQTT_BROKER})")
+    print(f"👉 Warte auf Verbindung vom Panda Touch...")
+    
     asyncio.create_task(update_limits_from_ws())
     ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     ssl_ctx.load_cert_chain(certfile="cert.pem", keyfile="key.pem")
     ssl_ctx.set_ciphers('DEFAULT@SECLEVEL=1') 
     server = await asyncio.start_server(handle_panda, '0.0.0.0', 8883, ssl=ssl_ctx)
-    print(f"\n🚀 Panda-Logic-Sync V1.11 (Persistent Mode)")
-    print(f"👉 BITTE 'BIND' DRÜCKEN FÜR START...\n")
     async with server: await server.serve_forever()
 
 if __name__ == "__main__":
