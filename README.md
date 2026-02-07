@@ -1,3 +1,4 @@
+![GitHub Views](https://komarev.com/ghpvc/?username=DeinGitHubUsername&repo=BIQU-Panda-Breath-Mod&style=flat-square)
 # BIQU-Panda-Breath-Mod 🚀
 
 Eine intelligente Steuerung für die **BIQU Panda Breath** Bauraumheizung.  
