@@ -270,7 +270,28 @@ def setup_mqtt_discovery():
         "device_class": "fan"
     }), retain=True)
 
-# --- WS LOOP ---
+    # Heiz-Aktivität (Binary Sensor für Farben in HA)
+    u_id_heat = f"pb_v66_{PRINTER_SN}_heating"
+    mqtt_client.publish(f"homeassistant/binary_sensor/{u_id_heat}/config", json.dumps({
+        "name": "Panda Heizung Aktiv",
+        "state_topic": f"{base}/heating",
+        "unique_id": u_id_heat,
+        "device": dev,
+        "payload_on": "ON",
+        "payload_off": "OFF",
+        "device_class": "heat"
+    }), retain=True)
+
+    # Panda Modus Sensor (Klartext für Auto/Manuell/Trocknen)
+    u_id_mode = f"pb_v66_{PRINTER_SN}_mode"
+    mqtt_client.publish(f"homeassistant/sensor/{u_id_mode}/config", json.dumps({
+        "name": "Panda Modus",
+        "state_topic": f"{base}/mode",
+        "unique_id": u_id_mode,
+        "device": dev,
+        "icon": "mdi:cog-sync"
+    }), retain=True)
+
 # --- WS LOOP ---
 async def update_limits_from_ws():
     global current_data, panda_ws
@@ -288,21 +309,31 @@ async def update_limits_from_ws():
                     data = json.loads(msg)
                     if 'settings' in data:
                         s = data['settings']
-                        
+
+                        # NEU: Modus-Logik für Home Assistant
+                        if 'work_mode' in s:
+                            mode_val = int(s['work_mode'])
+                            mode_text = "Aus"
+                            if mode_val == 1: mode_text = "Automatik"
+                            elif mode_val == 2: mode_text = "Manuell"
+                            elif mode_val == 3: mode_text = "Trocknen"
+                            
+                            # Nur senden, wenn HA nicht gerade selbst steuert
+                            if (time.time() - last_ha_change) > 8.0:
+                                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/mode", mode_text, retain=True)
+
                         # IST-Temperatur immer sofort verarbeiten
                         if 'warehouse_temper' in s: 
                             current_data["kammer_ist"] = float(s['warehouse_temper'])
                             mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/ist", s['warehouse_temper'])
                         
                         # WICHTIG: Alle Werte in current_data schreiben!
-                        # Behebt "Kammer: 0.0" und synchronisiert filtertemp intern
                         if 'set_temp' in s:
                             current_data["kammer_soll"] = float(s['set_temp'])
                         
                         if 'hotbedtemp' in s:
                             current_data["bett_limit"] = float(s['hotbedtemp'])
 
-                        # NEU: Filter-Schwelle für die Lüfter-Logik synchronisieren
                         if 'filtertemp' in s:
                             current_data["filtertemp"] = float(s['filtertemp'])
 
@@ -312,35 +343,28 @@ async def update_limits_from_ws():
                         if 'filament_timer' in s:
                             current_data["filament_timer"] = int(s['filament_timer'])
 
-                        # Nur wenn HA nicht gerade selbst was sendet (last_ha_change Schutz), 
-                        # synchronisieren wir die Werte zurück an MQTT
+                        # Synchronisation zurück an MQTT
                         if (time.time() - last_ha_change) > 8.0:
-                            # Kammer-Soll
                             if 'set_temp' in s: 
                                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/soll", int(s['set_temp']), retain=True)
                             
-                            # NEU: Filter-Schwelle an Home Assistant senden
                             if 'filtertemp' in s:
                                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/filtertemp", int(s['filtertemp']), retain=True)
 
-                            # Bett-Limit (Sicherheit)
                             if 'hotbedtemp' in s:
                                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/limit", int(s['hotbedtemp']), retain=True)
 
-                            # Power Status
                             if 'work_on' in s: 
                                 p_val = "1" if s['work_on'] in (True, 1, "1") else "0"
                                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/work_on", p_val, retain=True)
                             
-                            # Dryer Werte (Trockner)
                             if 'filament_temp' in s: 
                                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/dry_temp", int(s['filament_temp']), retain=True)
                             if 'filament_timer' in s: 
                                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/dry_time", int(s['filament_timer']), retain=True)
                             
-                        # Debug-Log für dich im Terminal
                         if DEBUG:
-                            print(f"DEBUG: WS-Sync -> Soll: {current_data['kammer_soll']} | Ist: {current_data['kammer_ist']} | Filter: {current_data.get('filtertemp')}")
+                            print(f"DEBUG: WS-Sync -> Soll: {current_data['kammer_soll']} | Ist: {current_data['kammer_ist']}")
 
         except Exception as e:
             if DEBUG: print(f"DEBUG: WS-Error: {e}")
@@ -411,7 +435,11 @@ async def handle_panda(reader, writer):
                 # Status-Entitäten an HA senden
                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/status", info, retain=True)
                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/fan", fan_state, retain=True)
-                
+
+                # NEU: Binärer Heizstatus für Farben
+                is_heating = "ON" if global_heating_state > 50 else "OFF"
+                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/heating", is_heating, retain=True)
+
                 # 6. Report-Paket für den Panda bauen
                 data = {
                     "print": {
