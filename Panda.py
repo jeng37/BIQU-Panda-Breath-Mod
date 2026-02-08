@@ -16,27 +16,26 @@ HYSTERESE = 1.5
 # Schutzzeit: Mindestpause (in Sek.) zwischen zwei Schaltvorgängen, um die Hardware zu schonen.
 MIN_SWITCH_TIME = 10    
 # MQTT Broker Adresse: Die IP-Adresse deines Home Assistant oder MQTT-Servers.
-MQTT_BROKER = "192.168.x.xxx"
+MQTT_BROKER = "192.168.8.195"
 # MQTT Benutzername: In HA unter Einstellungen -> Personen -> Benutzer angelegt.
-MQTT_USER = "mqtt-user"
+MQTT_USER = "mqttadmin"
 # MQTT Passwort: Das zugehörige Passwort für den MQTT-Benutzer.
-MQTT_PASS = "mqtt-password"
+MQTT_PASS = "rootlu"
 # MQTT Präfix: Die Basis für alle Topics (z.B. panda_breath/soll).
 MQTT_TOPIC_PREFIX = "panda_breath"
 # Host IP: Die statische IP-Adresse des Rechners, auf dem dieses Skript läuft.
-HOST_IP = "192.168.x.xxx" 
+HOST_IP = "192.168.8.174" 
 # Panda IP: Die IP-Adresse deines Panda Touch Displays im WLAN.
-PANDA_IP = "192.168.x.xxx"
+PANDA_IP = "192.168.8.142"
 # Seriennummer: Die SN deines Druckers (findest du in der Panda-UI oder auf dem Sticker).
 PRINTER_SN = "01P00A123456789"
 # Access Code: Der Sicherheitscode deines Druckers für die WebSocket-Verbindung.
 ACCESS_CODE = "01P00A12"
 # HA API URL: Link zum Bett-Temperatur-Sensor deines Druckers in Home Assistant.
-HA_URL = "http://192.168.x.xxx:8123/api/states/sensor.ks1c_bed_temperature"
+HA_URL = "http://192.168.8.195:8123/api/states/sensor.ks1c_bed_temperature"
 # HA Token: Ein 'Long-Lived Access Token' (erstellt im HA-Profil ganz unten).
-HA_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.ey............"
+HA_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJmZjg4NzFjOTRiMTc0OTJlYTE4MWVhNDY1YmI5M2JjNiIsImlhdCI6MTc3MDI5OTE1OSwiZXhwIjoyMDg1NjU5MTU5fQ.Biu6Ood1bH-xMBHQnfRFE6h2yiFMWWywTfCnFmji61o"
 # ==========================================
-
 
 # current_data nutzt jetzt die exakten Namen aus der Hardware (filament_temp/timer)
 current_data = {
@@ -76,7 +75,13 @@ def log_event(msg, force_console=False):
     if DEBUG or force_console:
         print(f"INFO:PandaDebug:{msg}")
 
-# --- MQTT LOGIK ---
+# --- HELPER ---
+def safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+        
 # --- MQTT LOGIK ---
 def on_mqtt_message(client, userdata, msg):
     global current_data, last_ha_change, ha_memory
@@ -355,9 +360,21 @@ async def handle_panda(reader, writer):
 
         while not writer.is_closing():
             try:
-                # 1. Daten von Home Assistant holen (Betttemperatur)
-                h_resp = requests.get(HA_URL, headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=2)
-                bed_ist = float(h_resp.json()['state'])
+                # 1. Daten von Home Assistant holen (Betttemperatur) - Jetzt mit Fehlerprüfung
+                try:
+                    h_resp = requests.get(HA_URL, headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=2)
+                    h_json = h_resp.json()
+                    raw_state = h_json.get('state', 'unavailable')
+                    
+                    if raw_state in ("unavailable", "unknown"):
+                        bed_ist = 0.0
+                        info = "Sensor Offline"
+                    else:
+                        bed_ist = float(raw_state)
+                except Exception as e:
+                    log_event(f"[HA-API-ERR] {e}")
+                    bed_ist = 0.0
+                    info = "HA-Fehler"
                 
                 # 2. Variablen laden
                 target, ist, limit = current_data["kammer_soll"], current_data["kammer_ist"], current_data["bett_limit"]
