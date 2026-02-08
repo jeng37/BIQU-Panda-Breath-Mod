@@ -15,7 +15,7 @@ Dieses Skript simuliert einen **Bambu Lab Drucker** auf einem Host-System (PC/Se
 - **Bidirektionaler MQTT-Sync**  
   Volle Kontrolle über Home Assistant.  
   Werte werden synchron gehalten zwischen:
-  - Panda Breath Display  
+   
   - Panda Web-UI  
   - Home Assistant  
   *(HA → Panda und Panda → HA)*
