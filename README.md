@@ -16,8 +16,7 @@ Dieses Skript simuliert einen **Bambu Lab Drucker** auf einem Host-System (PC/Se
   Volle Kontrolle über Home Assistant.  
   Werte werden synchron gehalten zwischen:
    
-  - Panda Web-UI  
-  - Home Assistant  
+- Home Assistant  
   *(HA → Panda und Panda → HA)*
 
 - **Intelligente Hysterese**  
