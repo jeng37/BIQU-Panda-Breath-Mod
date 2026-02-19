@@ -32,7 +32,7 @@ This script simulates a **Bambu Lab printer** on a host system (PC/Server), allo
 The mod utilizes the **Bambu Lab protocol** to spoof compatible hardware for the Panda ecosystem. This allows the Panda Breath to accept external temperature data as "internal" values and utilize its **native automation logic**.
 
 ### OrcaSlicer Integration
-In **OrcaSlicer**, you can enable the chamber temperature under filament settings (`Filament` -> `Cooling`). The script scans the G-code header via the Moonraker API and automatically sets the value (e.g., 42°C) as the `Chamber Target`.
+In **OrcaSlicer**, you can enable the chamber temperature under filament settings (`Filament`). The script scans the G-code header via the Moonraker API and automatically sets the value (e.g., 42°C) as the `Chamber Target`.
 
 <img width="931" height="781" alt="Screenshot from 2026-02-19 07-12-31" src="https://github.com/user-attachments/assets/bb5a8699-3e3f-45b9-a11f-f408459e9dbf" />
 
