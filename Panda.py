@@ -14,7 +14,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 # - Entfernt NICHTS: Original bleibt, Erweiterungen sind additiv/ersetzend innerhalb
 #   der bestehenden Struktur (nur ergänzt/erweitert).
 # ============================================================
-
+PANDA_VERSION = "v1.6"
 # ==========================================
 # KONFIGURATION - BITTE HIER ANPASSEN
 # ==========================================
@@ -162,7 +162,9 @@ async def slicer_auto_parser():
                 file_url = f"http://{PRINTER_IP}/server/files/gcodes/{filename}"
                 resp = requests.get(file_url, headers={'Range': 'bytes=0-50000'}, timeout=5)
 
+
                 # Suche M191 Sxx oder M141 Sxx
+            if resp.status_code in [200, 206]:
                 import re
                 match = re.search(r'(?:M191|M141)\s+S(\d+)', resp.text)
                 if match:
@@ -250,6 +252,14 @@ def on_mqtt_message(client, userdata, msg):
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/manual/set":
         log_event("[MQTT->PANDA] work_mode -> 2 (MANUELL)")
 
+        # ✅ FIX: Manuell hebt Slicer-Priority IMMER auf
+        current_data["slicer_priority_mode"] = False
+        mqtt_client.publish(
+            f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode",
+            "OFF",
+            retain=True
+        )
+
         async def flow():
             if panda_ws:
                 # laufenden Modus sauber stoppen (z.B. Auto oder Dry)
@@ -260,13 +270,12 @@ def on_mqtt_message(client, userdata, msg):
                 await panda_ws.send(json.dumps({"settings": {"work_mode": 2}}))
 
         asyncio.run_coroutine_threadsafe(flow(), main_loop)
-
-        # ❗ KEIN panda_modus publish hier!
-        # Status kommt ausschließlich aus dem WS-Loop (work_mode)
-
         return
         
     # --- AUTO MODUS ---
+    if msg.topic == f"{MQTT_TOPIC_PREFIX}/auto/set":
+        current_data["slicer_priority_mode"] = False
+    
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/auto/set":
         log_event("[MQTT->PANDA] work_mode -> 1 (AUTO)")
 
@@ -288,6 +297,9 @@ def on_mqtt_message(client, userdata, msg):
 
 
     # --- DRYING START (FIXED & STABIL) ---
+    if msg.topic == f"{MQTT_TOPIC_PREFIX}/drying/set":
+        current_data["slicer_priority_mode"] = False
+    
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/drying/set":
         log_event("[MQTT->PANDA] DRYER START (NATIVE CMD)")
 
@@ -451,18 +463,6 @@ def setup_mqtt_discovery():
             "mode": "box"
         }), retain=True)
 
-    # Schalter für Panda Power
-    mqtt_client.publish(f"homeassistant/switch/pb_v66_on/config", json.dumps({
-        "name": "Panda Power",
-        "state_topic": f"{base}/work_on",
-        "command_topic": f"{base}/work_on/set",
-        "unique_id": f"pb_v66_on",
-        "device": dev,
-        "payload_on": "1",
-        "payload_off": "0",
-        "icon": "mdi:power"
-    }), retain=True)
-
     # Panda Power (AN/AUS)
     mqtt_client.publish(
         f"homeassistant/switch/{base}_panda_power/config",
@@ -616,6 +616,25 @@ def setup_mqtt_discovery():
         "device_class": "temperature",
         "icon": "mdi:thermometer-chevron-up"
     }), retain=True)
+    
+    # ============================================================
+    # ✅ VERSION SENSOR
+    # ------------------------------------------------------------
+    # Anzeige der Panda Software Version in Home Assistant
+    # sensor.panda_breath_mod_version
+    # ============================================================
+    mqtt_client.publish(
+        f"homeassistant/sensor/{base}_version/config",
+        json.dumps({
+            "name": "Panda Version",
+            "object_id": f"{base}_version",
+            "state_topic": f"{base}/version",
+            "unique_id": f"{PRINTER_SN}_panda_version",
+            "device": dev,
+            "icon": "mdi:information-outline"
+        }),
+        retain=True
+    )    
 
 # --- WS LOOP ---
 async def update_limits_from_ws():
@@ -782,7 +801,8 @@ async def handle_panda(reader, writer):
                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/status", info, retain=True)
                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_heiz_status", info, retain=True)  # ✅ FIX: Heiz-Status Entity füttern
                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/fan", fan_state, retain=True)
-
+                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/version", PANDA_VERSION, retain=True)
+                
                 # ✅ Slicer Entities regelmäßig aktuell halten
                 mqtt_client.publish(
                     f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode",
