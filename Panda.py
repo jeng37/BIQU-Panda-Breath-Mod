@@ -15,6 +15,8 @@ from paho.mqtt.enums import CallbackAPIVersion
 #   der bestehenden Struktur (nur ergänzt/erweitert).
 # ============================================================
 PANDA_VERSION = "v1.6"
+last_reported_mode = None
+mode_change_hint = ""
 # ==========================================
 # KONFIGURATION - BITTE HIER ANPASSEN
 # ==========================================
@@ -27,11 +29,11 @@ HYSTERESE = 1.5
 # Schutzzeit: Mindestpause (in Sek.) zwischen zwei Schaltvorgängen, um die Hardware zu schonen.
 MIN_SWITCH_TIME = 10
 # MQTT Broker Adresse: Die IP-Adresse deines Home Assistant oder MQTT-Servers.
-MQTT_BROKER = "192.168.x.xxx"
+MQTT_BROKER = "192.168.8.195"
 # MQTT Benutzername: In HA unter Einstellungen -> Personen -> Benutzer angelegt.
-MQTT_USER = "xxxxx"
+MQTT_USER = "mqttadmin"
 # MQTT Passwort: Das zugehörige Passwort für den MQTT-Benutzer.
-MQTT_PASS = "xxxxx"
+MQTT_PASS = "rootlu"
 
 # MQTT Präfix: Die Basis für alle Topics (z.B. panda_breath_mod/soll).
 # ⚠️ WICHTIG: Deine Screenshots zeigen entity_ids wie:
@@ -42,17 +44,17 @@ MQTT_PASS = "xxxxx"
 MQTT_TOPIC_PREFIX = "panda_breath_mod"
 
 # Host IP: Die statische IP-Adresse des Rechners, auf dem dieses Skript läuft.
-HOST_IP = "192.168.x.xxx"
+HOST_IP = "192.168.8.174"
 # Panda IP: Die IP-Adresse deines Panda Touch Displays im WLAN.
-PANDA_IP = "192.168.x.xxx"
+PANDA_IP = "192.168.8.142"
 # Seriennummer: Die SN deines Druckers (findest du in der Panda-UI oder auf dem Sticker).
 PRINTER_SN = "01P00A123456789"
 # Access Code: Der Sicherheitscode deines Druckers für die WebSocket-Verbindung.
 ACCESS_CODE = "01P00A12"
 # HA API URL: Link zum Bett-Temperatur-Sensor deines Druckers in Home Assistant.
-HA_URL = "http://192.168.x.xxx:8123/api/states/sensor.ks1c_bed_temperature"
+HA_URL = "http://192.168.8.195:8123/api/states/sensor.ks1c_bed_temperature"
 # HA Token: Ein 'Long-Lived Access Token' (erstellt im HA-Profil ganz unten).
-HA_TOKEN = "eyJhbGciOiJI...................."
+HA_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJmZjg4NzFjOTRiMTc0OTJlYTE4MWVhNDY1YmI5M2JjNiIsImlhdCI6MTc3MDI5OTE1OSwiZXhwIjoyMDg1NjU5MTU5fQ.Biu6Ood1bH-xMBHQnfRFE6h2yiFMWWywTfCnFmji61o"
 
 # ============================================================
 # ✅ SLICER MODE (NEU)
@@ -61,7 +63,7 @@ HA_TOKEN = "eyJhbGciOiJI...................."
 # Funktion: liest beim Druckstart die ersten Bytes der Gcode Datei,
 # sucht M191 Sxx / M141 Sxx und setzt slicer_soll.
 # ============================================================
-PRINTER_IP = "192.168.x.xxx"
+PRINTER_IP = "192.168.8.140"
 # ==========================================
 
 # current_data nutzt jetzt die exakten Namen aus der Hardware (filament_temp/timer)
@@ -718,6 +720,8 @@ async def update_limits_from_ws():
                             mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_file", current_data.get("last_analyzed_file", ""), retain=True)
 
                             # Panda Modus Status + Slicer-Logik (ZENTRALE WAHRHEIT)
+                            global last_reported_mode, mode_change_hint
+                            
                             modus = "Standby"
 
                             if s.get("work_mode") == 1:
@@ -734,6 +738,10 @@ async def update_limits_from_ws():
                                 modus,
                                 retain=True
                             )
+                            # 👉 Nur EINMAL merken, wenn sich der Modus ändert
+                            if modus != last_reported_mode:
+                                mode_change_hint = f" | Modus→{modus}"
+                                last_reported_mode = modus
 
                         # Debug-Log für dich im Terminal
                         if DEBUG:
@@ -748,6 +756,8 @@ async def update_limits_from_ws():
 # --- EMULATION ---
 async def handle_panda(reader, writer):
     global last_switch_time, global_heating_state, terminal_cleared
+    global mode_change_hint
+    
     setup_mqtt_discovery()
     try:
         # Initialer Handshake
@@ -793,7 +803,15 @@ async def handle_panda(reader, writer):
                 # ✅ Zusatz: Slicer Info in der Terminalzeile
                 sl = int(current_data.get("slicer_soll", 0))
                 sl_prio = "SL-PRIO" if current_data.get("slicer_priority_mode", False) else "NORMAL"
-                line = f"\r🟢 ONLINE | Bed:{bed_ist}° | Kammer:{target}/{ist}° | Heiz:{'AN' if global_heating_state > 50 else 'AUS'} | Fan:{fan_state} | {info} | {sl_prio}:{sl}°"
+                line = (
+                    f"\r🟢 ONLINE | Bed:{bed_ist}° | Kammer:{target}/{ist}° | "
+                    f"Heiz:{'AN' if global_heating_state > 50 else 'AUS'} | "
+                    f"Fan:{fan_state} | {info} | {sl_prio}:{sl}°"
+                    f"{mode_change_hint}"
+                )
+
+                # 👉 Hinweis nur einmal anzeigen
+                mode_change_hint = ""
                 if not terminal_cleared: os.system('clear'); terminal_cleared = True
                 print(f"{line}\033[K", end="", flush=True)
 
