@@ -1,66 +1,60 @@
-![GitHub Views](https://komarev.com/ghpvc/?username=DeinGitHubUsername&repo=BIQU-Panda-Breath-Mod&style=flat-square)
+![GitHub Views](https://komarev.com/ghpvc/?username=jeng37&repo=BIQU-Panda-Breath-Mod&style=flat-square)
+
 # BIQU-Panda-Breath-Mod 🚀
 
-Eine intelligente Steuerung für die **BIQU Panda Breath** Bauraumheizung.  
-Dieses Skript simuliert einen **Bambu Lab Drucker** auf einem Host-System (PC/Server) und ermöglicht es, die Heizung basierend auf **realen Temperaturdaten aus Home Assistant** (via Moonraker/Klipper) zu steuern.
+Intelligent control for the **BIQU Panda Breath** chamber heater.  
+This script simulates a **Bambu Lab printer** on a host system (PC/Server), allowing the heater to be controlled based on **real-time temperature data from Home Assistant**.
 
 ---
 
 ## ✨ Key Features
 
-- **Universelle Auto-Funktion**  
-  Schaltet die intelligente Automatik des Panda Breath für **jedes Druckermodell** frei (Voron, Creality, Anycubic usw.).  
-  Voraussetzung: Der Drucker ist in Home Assistant eingebunden – dieses Skript fungiert als Protokoll-Übersetzer.
+- **Universal Auto-Function** Unlocks the intelligent automatic mode of the Panda Breath for **any printer model** (Voron, Creality, Anycubic, etc.).  
+  *Requirement:* The printer must be integrated into Home Assistant (e.g., via the [Moonraker Home Assistant Integration](https://github.com/marcolivierarsenault/moonraker-home-assistant)) – this script acts as the protocol translator.
 
-- **Bidirektionaler MQTT-Sync**  
-  Volle Kontrolle über Home Assistant.  
-  Werte werden synchron gehalten zwischen:
-   
-- Home Assistant  
-  *(HA → Panda und Panda → HA)*
+- **Bidirectional MQTT Sync** Full control via Home Assistant.  
+  Values are kept in sync between:
+  - Home Assistant  
+  - *(HA → Panda and Panda → HA)*
 
-- **Intelligente Hysterese**  
-  Präzise Steuerung mit konfigurierbarer Schaltschwelle, um unnötig häufiges Schalten der Hardware zu vermeiden.
+- **Intelligent Hysteresis** Precise control with a configurable switching threshold to prevent excessive hardware cycling.
 
-- **Sicherheits-Cutoff**  
-  Automatischer Heiz-Stopp basierend auf der Betttemperatur  
-  (Druckende-Erkennung über Home Assistant Sensor).
+- **Safety Cutoff** Automatic heating stop based on bed temperature  
+  (End-of-print detection via Home Assistant sensor).
 
-- **Live-Monitor**  
-  Hochoptimierte **Ein-Zeilen-Terminalanzeige** inklusive ANSI-Cursor-Fix für maximale Übersicht **ohne Flackern**.
+- **Live Monitor** Highly optimized **single-line terminal display** including an ANSI cursor fix for maximum clarity **without flickering**.
 
 ---
 
-## 🛠️ Funktionsweise & Slicer-Support
+## 🛠️ How it Works & Slicer Support
 
-Der Mod nutzt das **Bambu Lab Protokoll**, um dem Panda-Ökosystem eine kompatible Hardware vorzugaukeln. Dadurch akzeptiert die Panda Breath externe Temperaturdaten als „interne“ Werte und erlaubt die Nutzung der **nativen Automatik-Logik**.
+The mod utilizes the **Bambu Lab protocol** to spoof compatible hardware for the Panda ecosystem. This allows the Panda Breath to accept external temperature data as "internal" values and utilize its **native automation logic**.
 
 ### OrcaSlicer Integration
-In **OrcaSlicer** kann unter den Filamenteinstellungen (`Filament` -> `Cooling`) die Kammertemperatur aktiviert werden. Das Skript scannt den G-Code-Header via Moonraker-API und setzt den Wert (z. B. 42°C) automatisch als `Kammer Soll`.
+In **OrcaSlicer**, you can enable the chamber temperature under filament settings (`Filament` -> `Cooling`). The script scans the G-code header via the Moonraker API and automatically sets the value (e.g., 42°C) as the `Chamber Target`.
 
 <img width="931" height="781" alt="Screenshot from 2026-02-19 07-12-31" src="https://github.com/user-attachments/assets/bb5a8699-3e3f-45b9-a11f-f408459e9dbf" />
-
 
 ---
 
 ## 🚀 Installation & Setup
 
-### 1. System vorbereiten
+### 1. Prepare the System
 
-Das Host-System (Server oder PC) muss sich im **selben Netzwerk** wie die Panda Breath befinden.
+The host system (Server or PC) must be in the **same network** as the Panda Breath.
 
 ```bash
-# Repository klonen
-git clone https://github.com/jeng37/BIQU-Panda-Breath-Mod.git
+
+# Clone the repository
+git clone [https://github.com/jeng37/BIQU-Panda-Breath-Mod.git](https://github.com/jeng37/BIQU-Panda-Breath-Mod.git)
 cd BIQU-Panda-Breath-Mod
 
-# Abhängigkeiten installieren
+# Install dependencies
 pip install -r requirements.txt
 
-# SSL-Zertifikate generieren (wichtig für die verschlüsselte Verbindung)
+# Generate SSL certificates (essential for the encrypted connection)
 chmod +x cert_gen.sh
 ./cert_gen.sh
-```
 2. Konfiguration
 
 Öffne die Datei Panda.py und passe die Konfigurationssektion an.
@@ -82,50 +76,55 @@ Sensor-URL
 ```bash
 nano Panda.py
 ```
-Anschließend starten
-(sudo wird benötigt wegen Port 8883):
-```bash
-sudo python3 Panda.py
-```
-3. Verbindung herstellen (Binding)
+2. Configuration
+Open the Panda.py file and adjust the configuration section. All parameters are extensively documented within the script itself.
 
-Öffne die Panda Web-UI im Browser:
+Required Information:
+
+MQTT: Broker IP, Username, Password
+
+Panda Breath Hardware: Panda IP, Printer Serial Number (SN), Access Code
+
+Home Assistant: Long-Lived Access Token, Sensor URL
+
+Bash
+nano Panda.py
+Afterward, start the script (sudo is required for port 8883):
+
+Bash
+sudo python3 Panda.py
+3. Establish Connection (Binding)
+Open the Panda Web UI in your browser:
+
 http://<PANDA_IP>
 
-Trage manuell ein:
+Enter the following manually:
 
-Printer SN / 
-Access Code / 
-Printer IP → IP deines Host-Systems
+Printer SN
+
+Access Code
+
+Printer IP → The IP of your host system
+
 <img width="1864" height="932" alt="image" src="https://github.com/user-attachments/assets/cb2b26c5-3f24-4ba3-904a-0a7f5e6e76ac" />
 
+⚠️ Important: Do not click "Scan" – the printer simulator will not be found via scanning. Click Bind directly.
 
-⚠️ Wichtig:
-Nicht auf „Scan“ klicken – der Drucker-Simulator wird beim Scan nicht gefunden.
-
-Klicke direkt auf Bind
-
-Sobald der Button zu Unbind wechselt, ist die Verbindung aktiv und die Panda Breath übernimmt die externen Werte.
+Once the button changes to "Unbind", the connection is active and the Panda Breath will use the external values.
 
 📊 Dashboard & Monitoring
-Home Assistant Dashboard (Beispiel)
-
+Home Assistant Dashboard (Example)
 <img width="1835" height="836" alt="image" src="https://github.com/user-attachments/assets/1b1b7d8a-9fc1-4e6f-ab15-3ba944f3f9ea" />
 <img width="510" height="617" alt="image" src="https://github.com/user-attachments/assets/11cb85bf-6958-4620-b237-6a130bea637a" />
 <img width="1519" height="790" alt="image" src="https://github.com/user-attachments/assets/450b3fa4-51ad-4219-89e7-ff3abf4ad2d8" />
 <img width="1511" height="606" alt="image" src="https://github.com/user-attachments/assets/9265ca56-cee2-455b-b43a-f306706e9709" />
 
-Live-Terminal-Monitor
-
-Dank optimiertem Cursor-Handling erfolgt die Anzeige ruhig und flackerfrei:
+Live Terminal Monitor
+Thanks to optimized cursor handling, the display is smooth and flicker-free:
 
 <img width="1467" height="264" alt="image" src="https://github.com/user-attachments/assets/020dd9ee-66c3-40db-b827-0f8574147a4b" />
 
-📝 Lizenz & Disclaimer
+📝 License & Disclaimer
+This project is licensed under the MIT License.
 
-Dieses Projekt steht unter der MIT-Lizenz.
-
-Disclaimer:
-Die Nutzung erfolgt auf eigene Gefahr.
-Achte stets auf die geltenden Brandschutzbestimmungen deines 3D-Druckers sowie deiner lokalen Umgebung.
-
+Disclaimer: Use at your own risk. Always pay attention to the applicable fire safety regulations for your 3D printer and your local environment.
