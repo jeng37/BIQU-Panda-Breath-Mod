@@ -1,0 +1,105 @@
+title: Panda Breath Mod
+path: panda-breath-mod
+type: sections
+max_columns: 3
+
+sections:
+  - type: grid
+    cards:
+      - type: heading
+        heading: Panda Breath Mod
+
+      # === MODUS BUTTONS ===
+      - type: horizontal-stack
+        cards:
+          - type: tile
+            entity: button.panda_breath_mod_auto
+            name: Auto
+            icon: mdi:cog-sync
+
+          - type: tile
+            entity: button.panda_breath_mod_manual
+            name: Manuell
+            icon: mdi:hand-back-right
+
+          - type: tile
+            entity: button.panda_breath_mod_drying
+            name: Dry
+            icon: mdi:waves
+
+      # === STATUS ===
+      - type: tile
+        entity: sensor.panda_breath_mod_panda_heiz_status
+        name: Warte auf Bett
+        icon: mdi:timer-sand
+
+      # === TEMPERATUREN ===
+      - type: tile
+        entity: number.panda_breath_mod_limit
+        name: Bett Limit
+        icon: mdi:thermometer-alert
+
+      - type: tile
+        entity: sensor.ks1c_bed_temp_unified
+        name: KS1C Bed Temp
+        icon: mdi:thermometer
+
+      - type: tile
+        entity: number.panda_breath_mod_soll
+        name: Kammer Soll
+        icon: mdi:thermometer-plus
+
+      - type: tile
+        entity: sensor.panda_breath_mod_kammer_ist
+        name: Kammer Ist
+        icon: mdi:thermometer
+
+      # === FILTER & DRYER ===
+      - type: tile
+        entity: number.panda_breath_mod_filtertemp
+        name: Filter Fan Start
+        icon: mdi:fan
+
+      - type: tile
+        entity: button.panda_breath_mod_drying
+        name: Panda Dryer
+        icon: mdi:hair-dryer
+
+      - type: tile
+        entity: number.panda_breath_mod_dry_temp
+        name: Dryer Temp
+        icon: mdi:thermometer
+
+      - type: tile
+        entity: number.panda_breath_mod_dry_time
+        name: Dryer Time
+        icon: mdi:timer
+
+      # === SLICER ===
+      - type: tile
+        entity: switch.panda_breath_mod_slicer_priority_mode
+        name: Slicer Mode
+        icon: mdi:priority-high
+
+      - type: tile
+        entity: sensor.panda_breath_mod_slicer_target_temp
+        name: Slicer Target Temp
+        icon: mdi:temperature-celsius
+
+      # === STOP / POWER ===
+      - type: tile
+        entity: button.panda_breath_mod_heizung_stop
+        name: Stop Heizen
+        icon: mdi:radiator-off
+        color: red
+
+      - type: tile
+        entity: switch.panda_breath_mod_panda_power
+        name: Panda Power
+        icon: mdi:power
+
+      # === VERSION ===
+      - type: tile
+        entity: sensor.panda_breath_mod_version
+        name: Version
+        icon: mdi:information-outline
