@@ -31,10 +31,15 @@ Dieses Skript simuliert einen **Bambu Lab Drucker** auf einem Host-System (PC/Se
 
 ---
 
-## 🛠️ Funktionsweise
+## 🛠️ Funktionsweise & Slicer-Support
 
-Der Mod nutzt das **Bambu Lab Protokoll**, um dem Panda-Ökosystem eine kompatible Hardware vorzugaukeln.  
-Dadurch akzeptiert die Panda Breath externe Temperaturdaten als „interne“ Werte und erlaubt die Nutzung der **nativen Automatik-Logik** für **beliebige Druckermodelle**.
+Der Mod nutzt das **Bambu Lab Protokoll**, um dem Panda-Ökosystem eine kompatible Hardware vorzugaukeln. Dadurch akzeptiert die Panda Breath externe Temperaturdaten als „interne“ Werte und erlaubt die Nutzung der **nativen Automatik-Logik**.
+
+### OrcaSlicer Integration
+In **OrcaSlicer** kann unter den Filamenteinstellungen (`Filament` -> `Cooling`) die Kammertemperatur aktiviert werden. Das Skript scannt den G-Code-Header via Moonraker-API und setzt den Wert (z. B. 42°C) automatisch als `Kammer Soll`.
+
+<img width="931" height="781" alt="Screenshot from 2026-02-19 07-12-31" src="https://github.com/user-attachments/assets/bb5a8699-3e3f-45b9-a11f-f408459e9dbf" />
+
 
 ---
 
@@ -92,7 +97,8 @@ Trage manuell ein:
 Printer SN / 
 Access Code / 
 Printer IP → IP deines Host-Systems
-<img width="1807" height="829" alt="image" src="https://github.com/user-attachments/assets/ce9f1d40-4b09-4ee6-a1c8-edeed70f5ccd" />
+<img width="1864" height="932" alt="image" src="https://github.com/user-attachments/assets/cb2b26c5-3f24-4ba3-904a-0a7f5e6e76ac" />
+
 
 ⚠️ Wichtig:
 Nicht auf „Scan“ klicken – der Drucker-Simulator wird beim Scan nicht gefunden.
@@ -105,14 +111,14 @@ Sobald der Button zu Unbind wechselt, ist die Verbindung aktiv und die Panda Bre
 Home Assistant Dashboard (Beispiel)
 
 <img width="1835" height="836" alt="image" src="https://github.com/user-attachments/assets/1b1b7d8a-9fc1-4e6f-ab15-3ba944f3f9ea" />
-<img width="792" height="449" alt="image" src="https://github.com/user-attachments/assets/90d64e87-a897-43da-98b1-40d9bb3744b2" />
+<img width="524" height="709" alt="image" src="https://github.com/user-attachments/assets/145d9e29-319a-4ceb-969c-504106f1b0af" />
 <img width="1069" height="840" alt="image" src="https://github.com/user-attachments/assets/72258e1e-06aa-4c5c-93d3-575d843aae0a" />
-
 
 Live-Terminal-Monitor
 
 Dank optimiertem Cursor-Handling erfolgt die Anzeige ruhig und flackerfrei:
-<img width="734" height="108" alt="image" src="https://github.com/user-attachments/assets/1c299495-bc72-43b2-b603-89f91ebd40b6" />
+
+<img width="1467" height="264" alt="image" src="https://github.com/user-attachments/assets/020dd9ee-66c3-40db-b827-0f8574147a4b" />
 
 📝 Lizenz & Disclaimer
 
@@ -121,8 +127,4 @@ Dieses Projekt steht unter der MIT-Lizenz.
 Disclaimer:
 Die Nutzung erfolgt auf eigene Gefahr.
 Achte stets auf die geltenden Brandschutzbestimmungen deines 3D-Druckers sowie deiner lokalen Umgebung.
-
-
-
-
 
