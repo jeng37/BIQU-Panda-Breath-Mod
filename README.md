@@ -1,4 +1,4 @@
-![GitHub Views](https://komarev.com/ghpvc/?username=jeng37&repo=BIQU-Panda-Breath-Mod&style=flat-square)
+![Unique Views](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fjeng37%2FBIQU-Panda-Breath-Mod&count_bg=%2379C83D&title_bg=%23555555&icon=&icon_color=%23E7E7E7&title=Views&edge_flat=true)
 
 # BIQU-Panda-Breath-Mod 🚀
 
