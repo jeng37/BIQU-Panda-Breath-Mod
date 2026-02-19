@@ -1,5 +1,5 @@
 <p align="left">
-  <img src="https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fjeng37%2FBIQU-Panda-Breath-Mod&count_bg=%23238636&title_bg=%23555555&icon=&icon_color=%23E7E7E7&title=Unique+Views&edge_flat=true" alt="Unique Views">
+  <img src="https://up-mojo.com/api/v1/badge?url=https://github.com/jeng37/BIQU-Panda-Breath-Mod&label=Unique%20Views&color=238636&style=flat-square" alt="Unique Views">
 </p>
 
 # BIQU-Panda-Breath-Mod 🚀
