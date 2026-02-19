@@ -1,7 +1,6 @@
-<p align="left">
-  <img src="https://up-mojo.com/api/v1/badge?url=https://github.com/jeng37/BIQU-Panda-Breath-Mod&label=Unique%20Views&color=238636&style=flat-square" alt="Unique Views">
-</p>
+![Unique Views](https://img.shields.io/endpoint?url=https%3A%2F%2Fmouseless.me%2Fapi%2Fv1%2Fcounter%2Fjeng37-panda-breath%3Flabel%3DUnique%2520Views%26color%3Dgreen%26style%3Dflat-square)
 
+Intelligent control for the **BIQU Panda Breath** chamber heater.
 # BIQU-Panda-Breath-Mod 🚀
 
 Intelligent control for the **BIQU Panda Breath** chamber heater.  
