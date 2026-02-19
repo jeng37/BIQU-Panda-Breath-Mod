@@ -1,4 +1,4 @@
-![Unique Views](https://img.shields.io/endpoint?url=https%3A%2F%2Fmouseless.me%2Fapi%2Fv1%2Fcounter%2Fjeng37-panda-breath%3Flabel%3DUnique%2520Views%26color%3Dgreen%26style%3Dflat-square)
+![GitHub Views](https://komarev.com/ghpvc/?username=jeng37&repo=BIQU-Panda-Breath-Mod&style=flat-square)
 
 Intelligent control for the **BIQU Panda Breath** chamber heater.
 # BIQU-Panda-Breath-Mod 🚀
