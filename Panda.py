@@ -14,7 +14,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 # - Entfernt NICHTS: Original bleibt, Erweiterungen sind additiv/ersetzend innerhalb
 #   der bestehenden Struktur (nur ergänzt/erweitert).
 # ============================================================
-PANDA_VERSION = "v1.6"
+PANDA_VERSION = "v1.7"
 last_reported_mode = None
 mode_change_hint = ""
 # ==========================================
@@ -29,11 +29,11 @@ HYSTERESE = 1.5
 # Schutzzeit: Mindestpause (in Sek.) zwischen zwei Schaltvorgängen, um die Hardware zu schonen.
 MIN_SWITCH_TIME = 10
 # MQTT Broker Adresse: Die IP-Adresse deines Home Assistant oder MQTT-Servers.
-MQTT_BROKER = "192.168.8.195"
+MQTT_BROKER = "192.168.x.xxx"
 # MQTT Benutzername: In HA unter Einstellungen -> Personen -> Benutzer angelegt.
-MQTT_USER = "mqttadmin"
+MQTT_USER = "xxxxxxx"
 # MQTT Passwort: Das zugehörige Passwort für den MQTT-Benutzer.
-MQTT_PASS = "rootlu"
+MQTT_PASS = "xxxxxxx"
 
 # MQTT Präfix: Die Basis für alle Topics (z.B. panda_breath_mod/soll).
 # ⚠️ WICHTIG: Deine Screenshots zeigen entity_ids wie:
@@ -44,17 +44,17 @@ MQTT_PASS = "rootlu"
 MQTT_TOPIC_PREFIX = "panda_breath_mod"
 
 # Host IP: Die statische IP-Adresse des Rechners, auf dem dieses Skript läuft.
-HOST_IP = "192.168.8.174"
+HOST_IP = "192.168.x.xxx"
 # Panda IP: Die IP-Adresse deines Panda Touch Displays im WLAN.
-PANDA_IP = "192.168.8.142"
+PANDA_IP = "192.168.x.xxx"
 # Seriennummer: Die SN deines Druckers (findest du in der Panda-UI oder auf dem Sticker).
 PRINTER_SN = "01P00A123456789"
 # Access Code: Der Sicherheitscode deines Druckers für die WebSocket-Verbindung.
 ACCESS_CODE = "01P00A12"
 # HA API URL: Link zum Bett-Temperatur-Sensor deines Druckers in Home Assistant.
-HA_URL = "http://192.168.8.195:8123/api/states/sensor.ks1c_bed_temperature"
+HA_URL = "http://192.168.x.xxx:8123/api/states/sensor.ks1c_bed_temperature"
 # HA Token: Ein 'Long-Lived Access Token' (erstellt im HA-Profil ganz unten).
-HA_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJmZjg4NzFjOTRiMTc0OTJlYTE4MWVhNDY1YmI5M2JjNiIsImlhdCI6MTc3MDI5OTE1OSwiZXhwIjoyMDg1NjU5MTU5fQ.Biu6Ood1bH-xMBHQnfRFE6h2yiFMWWywTfCnFmji61o"
+HA_TOKEN = "eyJhbGciOiJIUzI1Ni............................................................................................"
 
 # ============================================================
 # ✅ SLICER MODE (NEU)
@@ -63,7 +63,7 @@ HA_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJmZjg4NzFjOTRiMTc0OTJ
 # Funktion: liest beim Druckstart die ersten Bytes der Gcode Datei,
 # sucht M191 Sxx / M141 Sxx und setzt slicer_soll.
 # ============================================================
-PRINTER_IP = "192.168.8.140"
+PRINTER_IP = "192.168.x.xxx"
 # ==========================================
 
 # current_data nutzt jetzt die exakten Namen aus der Hardware (filament_temp/timer)
@@ -275,56 +275,31 @@ def on_mqtt_message(client, userdata, msg):
         return
         
     # --- AUTO MODUS ---
-    if msg.topic == f"{MQTT_TOPIC_PREFIX}/auto/set":
-        current_data["slicer_priority_mode"] = False
-    
-    if msg.topic == f"{MQTT_TOPIC_PREFIX}/auto/set":
-        log_event("[MQTT->PANDA] work_mode -> 1 (AUTO)")
-
-        async def flow():
-            if panda_ws:
-                # laufenden Modus sauber stoppen (z.B. Dry)
-                await panda_ws.send(json.dumps({"settings": {"isrunning": 0}}))
-                await asyncio.sleep(0.2)
-
-                # Auto-Modus setzen
-                await panda_ws.send(json.dumps({"settings": {"work_mode": 1}}))
-
-        asyncio.run_coroutine_threadsafe(flow(), main_loop)
-
-        # ❗ KEIN panda_modus publish hier!
-        # Status kommt NUR aus dem WS-Loop (work_mode)
-
-        return
 
 
     # --- DRYING START (FIXED & STABIL) ---
-    if msg.topic == f"{MQTT_TOPIC_PREFIX}/drying/set":
+    elif msg.topic == f"{MQTT_TOPIC_PREFIX}/drying/set":
         current_data["slicer_priority_mode"] = False
     
-    if msg.topic == f"{MQTT_TOPIC_PREFIX}/drying/set":
         log_event("[MQTT->PANDA] DRYER START (NATIVE CMD)")
 
         async def d_flow():
             if panda_ws:
-                # laufenden Modus sauber stoppen (Auto / Manuell)
                 await panda_ws.send(json.dumps({"settings": {"isrunning": 0}}))
                 await asyncio.sleep(0.2)
 
-                # Dryer Parameter setzen
                 t = int(current_data.get("filament_temp", 50))
                 h = int(current_data.get("filament_timer", 3))
                 await panda_ws.send(json.dumps({
                     "settings": {
                         "filament_temp": t,
                         "filament_timer": h,
-                        "filament_drying_mode": 3  # 3 = Custom
+                        "filament_drying_mode": 3
                     },
                     "ui_action": "custom"
                 }))
                 await asyncio.sleep(0.5)
 
-                # Dry-Modus starten
                 await panda_ws.send(json.dumps({
                     "settings": {
                         "work_mode": 3,
@@ -333,10 +308,6 @@ def on_mqtt_message(client, userdata, msg):
                 }))
 
         asyncio.run_coroutine_threadsafe(d_flow(), main_loop)
-
-        # ❗ KEIN panda_modus publish hier!
-        # Status kommt ausschließlich aus dem WS-Loop (work_mode)
-
         return
         
     # --- START / STOP ---
@@ -719,18 +690,21 @@ async def update_limits_from_ws():
                             mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_target_temp", int(current_data.get("slicer_soll", 0)), retain=True)  # ✅ WICHTIGSTE ENTITÄT
                             mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_file", current_data.get("last_analyzed_file", ""), retain=True)
 
-                            # Panda Modus Status + Slicer-Logik (ZENTRALE WAHRHEIT)
+                             # Panda Modus Status + Slicer-Logik (ZENTRALE WAHRHEIT)
                             global last_reported_mode, mode_change_hint
                             
                             modus = "Standby"
 
-                            if s.get("work_mode") == 1:
-                                 modus = "Automatik"
+                            wm = s.get("work_mode")
+                            running = s.get("isrunning", 0)
 
-                            elif s.get("work_mode") == 2:
+                            if wm == 1 and running == 1:
+                                modus = "Automatik"
+
+                            elif wm == 2 and running == 1:
                                 modus = "Manuell"
 
-                            elif s.get("work_mode") == 3:
+                            elif wm == 3 and running == 1:
                                 modus = "Dry"
 
                             mqtt_client.publish(
@@ -738,6 +712,7 @@ async def update_limits_from_ws():
                                 modus,
                                 retain=True
                             )
+
                             # 👉 Nur EINMAL merken, wenn sich der Modus ändert
                             if modus != last_reported_mode:
                                 mode_change_hint = f" | Modus→{modus}"
