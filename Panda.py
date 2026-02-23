@@ -243,24 +243,30 @@ def on_mqtt_message(client, userdata, msg):
         return
 
     # ============================================================
-    # ✅ FEHLENDE ENTITÄT 2: button.panda_breath_mod_heizung_stop
-    # ------------------------------------------------------------
-    # Funktion: Heizung sofort AUS
+    # HEIZUNG STOP (LOGIK STOP + MODUS STOP)
     # ============================================================
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/heizung_stop/set":
-        log_event("[MQTT->PANDA] HEIZUNG STOP")
+        log_event("[MQTT->PANDA] HEIZUNG STOP", force_console=True)
+
+        # 🔴 WICHTIG: Heiz-Logik deaktivieren
         current_data["kammer_soll"] = 0.0
 
-        if panda_ws:
-            asyncio.run_coroutine_threadsafe(
-                panda_ws.send(json.dumps({"settings": {"set_temp": 0}})),
-                main_loop
-            )
+        async def stop_flow():
+            if panda_ws:
+                await panda_ws.send(json.dumps({
+                    "settings": {
+                        "isrunning": 0,
+                        "work_mode": 0
+                    }
+                }))
 
-        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/soll", 0, retain=True)
+        asyncio.run_coroutine_threadsafe(stop_flow(), main_loop)
+
+        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Standby", retain=True)
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/status", "Heizung gestoppt", retain=True)
-        return
 
+        return
+        
     # --- MANUELL MODUS ---
     if msg.topic.endswith("/manual/set"):
         log_event(">>> MANUELL MODE ENTERED <<<", force_console=True)
