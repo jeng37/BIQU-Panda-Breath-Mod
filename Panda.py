@@ -232,6 +232,7 @@ def on_mqtt_message(client, userdata, msg):
         is_on = payload in ("on", "1", "true")
 
         current_data["slicer_priority_mode"] = is_on
+        log_event(">>> SLICER MODE ENTERED <<<", force_console=True)
         log_event(f"[MQTT->SLICER] slicer_priority_mode -> {is_on}")
 
         mqtt_client.publish(
@@ -263,6 +264,7 @@ def on_mqtt_message(client, userdata, msg):
     # --- MANUELL MODUS ---
     if msg.topic.endswith("/manual/set"):
         log_event(">>> MANUELL MODE ENTERED <<<", force_console=True)
+        log_event(f">>> MANUELL MODE ENTERED <<<")
 
         # ✅ SOFORT an HA melden (UI wird sofort grün)
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Manuell", retain=True)
@@ -290,6 +292,7 @@ def on_mqtt_message(client, userdata, msg):
     # --- AUTO MODUS ---
     if msg.topic == "panda_breath_mod/auto/set":
         log_event(">>> AUTO MODE ENTERED <<<", force_console=True)
+        log_event(f">>> AUTO MODE ENTERED <<<")
 
         # ✅ UI sofort grün
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Automatik", retain=True)
@@ -325,6 +328,7 @@ def on_mqtt_message(client, userdata, msg):
         current_data["slicer_priority_mode"] = False
 
         log_event(">>> DRYER MODE ENTERED <<<", force_console=True)
+        log_event(f">>> DRYER MODE ENTERED <<<")
 
         # ✅ SOFORT an HA melden (UI wird sofort grün)
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Dry", retain=True)
@@ -895,8 +899,20 @@ async def handle_panda(reader, writer):
         while not writer.is_closing():
             try:
                 # 1. Daten von Home Assistant holen (Betttemperatur)
-                h_resp = requests.get(HA_URL, headers={"Authorization": f"Bearer {HA_TOKEN}"}, timeout=2)
-                bed_ist = float(h_resp.json()['state'])
+                h_resp = requests.get(
+                    HA_URL,
+                    headers={"Authorization": f"Bearer {HA_TOKEN}"},
+                    timeout=2
+                )
+
+                bed_raw = h_resp.json().get("state", "0")
+
+                try:
+                    bed_ist = float(bed_raw)
+                except (ValueError, TypeError):
+                    log_event(f"[HA] Bett Sensor ungültig: {bed_raw}", force_console=True)
+                    await asyncio.sleep(2)
+                    continue
 
                 # 2. Variablen laden
                 target, ist, limit = current_data["kammer_soll"], current_data["kammer_ist"], current_data["bett_limit"]
