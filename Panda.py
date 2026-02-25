@@ -17,6 +17,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 PANDA_VERSION = "v1.7"
 last_reported_mode = None
 mode_change_hint = ""
+heating_locked = False
 # ==========================================
 # KONFIGURATION - BITTE HIER ANPASSEN
 # ==========================================
@@ -29,11 +30,11 @@ HYSTERESE = 1.5
 # Schutzzeit: Mindestpause (in Sek.) zwischen zwei Schaltvorgängen, um die Hardware zu schonen.
 MIN_SWITCH_TIME = 10
 # MQTT Broker Adresse: Die IP-Adresse deines Home Assistant oder MQTT-Servers.
-MQTT_BROKER = "192.168.x.xxx"
+MQTT_BROKER = "192.168.8.195"
 # MQTT Benutzername: In HA unter Einstellungen -> Personen -> Benutzer angelegt.
-MQTT_USER = "xxxxxx"
+MQTT_USER = "mqttadmin"
 # MQTT Passwort: Das zugehörige Passwort für den MQTT-Benutzer.
-MQTT_PASS = "xxxxxx"
+MQTT_PASS = "rootlu"
 
 # MQTT Präfix: Die Basis für alle Topics (z.B. panda_breath_mod/soll).
 # ⚠️ WICHTIG: Deine Screenshots zeigen entity_ids wie:
@@ -44,17 +45,17 @@ MQTT_PASS = "xxxxxx"
 MQTT_TOPIC_PREFIX = "panda_breath_mod"
 
 # Host IP: Die statische IP-Adresse des Rechners, auf dem dieses Skript läuft.
-HOST_IP = "192.168.x.xxx"
+HOST_IP = "192.168.8.174"
 # Panda IP: Die IP-Adresse deines Panda Touch Displays im WLAN.
-PANDA_IP = "192.168.x.xxx"
+PANDA_IP = "192.168.8.142"
 # Seriennummer: Die SN deines Druckers (findest du in der Panda-UI oder auf dem Sticker).
 PRINTER_SN = "01P00A123456789"
 # Access Code: Der Sicherheitscode deines Druckers für die WebSocket-Verbindung.
 ACCESS_CODE = "01P00A12"
 # HA API URL: Link zum Bett-Temperatur-Sensor deines Druckers in Home Assistant.
-HA_URL = "http://192.168.x.xxx:8123/api/states/sensor.ks1c_bed_temperature"
+HA_URL = "http://192.168.8.195:8123/api/states/sensor.ks1c_bed_temperature"
 # HA Token: Ein 'Long-Lived Access Token' (erstellt im HA-Profil ganz unten).
-HA_TOKEN = "eyJhbGciOiJIUzI1Ni............................................"
+HA_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJmZjg4NzFjOTRiMTc0OTJlYTE4MWVhNDY1YmI5M2JjNiIsImlhdCI6MTc3MDI5OTE1OSwiZXhwIjoyMDg1NjU5MTU5fQ.Biu6Ood1bH-xMBHQnfRFE6h2yiFMWWywTfCnFmji61o"
 
 # ============================================================
 # ✅ SLICER MODE (NEU)
@@ -63,7 +64,7 @@ HA_TOKEN = "eyJhbGciOiJIUzI1Ni............................................"
 # Funktion: liest beim Druckstart die ersten Bytes der Gcode Datei,
 # sucht M191 Sxx / M141 Sxx und setzt slicer_soll.
 # ============================================================
-PRINTER_IP = "192.168.x.xxx"
+PRINTER_IP = "192.168.8.140"
 # ==========================================
 
 # current_data nutzt jetzt die exakten Namen aus der Hardware (filament_temp/timer)
@@ -79,14 +80,14 @@ current_data = {
     # ✅ SLICER MODE STATE (NEU)
     # --------------------------------------------------------
     # slicer_priority_mode:
-    #   - True  => Slicer-Wert hat Vorrang (bei erkanntem M191/M141)
-    #   - False => HA / Panda Setting (soll) hat Vorrang
+    #    - True  => Slicer-Wert hat Vorrang (bei erkanntem M191/M141)
+    #    - False => HA / Panda Setting (soll) hat Vorrang
     #
     # slicer_soll:
-    #   - letzter erkannter Wert aus dem Gcode (nur Anzeige)
+    #    - letzter erkannter Wert aus dem Gcode (nur Anzeige)
     #
     # last_analyzed_file:
-    #   - damit wir pro Datei nur einmal analysieren
+    #    - damit wir pro Datei nur einmal analysieren
     # ========================================================
     "slicer_priority_mode": False,
     "slicer_soll": 0.0,
@@ -104,6 +105,7 @@ terminal_cleared = False
 last_reported_mode = None
 mode_change_hint = ""
 last_ws_settings = {}
+power_forced_off = False # Ergänzt für Logik-Vollständigkeit
 
 # --- LOGGING ---
 logging.basicConfig(level=logging.CRITICAL)
@@ -125,50 +127,34 @@ def log_event(msg, force_console=False):
     if DEBUG or force_console:
         print(f" INFO:PandaDebug:{msg}")
 
-# ============================================================
-# ✅ HELPER (NEU)
-# ------------------------------------------------------------
-# sichere Zahl-Konvertierung (damit MQTT/JSON nicht abfliegt)
-# ============================================================
+# --- HELPER ---
 def safe_float(v, default=0.0):
     try:
         return float(v)
     except Exception:
         return default
 
-# ============================================================
-# ✅ SLICER PARSER (NEU)
-# ------------------------------------------------------------
-# Liest Print-Status & Gcode Anfang, sucht:
-#  - M191 Sxx (Chamber temperature)
-#  - M141 Sxx (Chamber temperature)
-# und setzt current_data["slicer_soll"]
-#
-# Wenn slicer_priority_mode aktiv ist, übernimmt er automatisch kammer_soll
-# und sendet set_temp an Panda.
-# ============================================================
+# ✅ SLICER PARSER (OPTIMIERT: Nutzt run_in_executor gegen Blockaden)
 async def slicer_auto_parser():
+    loop = asyncio.get_event_loop()
     while True:
         try:
-            # Moonraker Print-Status (welche Datei wird gedruckt?)
-            status_url = f"http://{PRINTER_IP}/printer/objects/query?print_stats"
-            r = requests.get(status_url, timeout=2).json()
+            # OPTIMIERUNG: requests in Thread auslagern, damit das Hauptskript (Heartbeat) nicht stoppt
+            def fetch_moonraker():
+                return requests.get(f"http://{PRINTER_IP}/printer/objects/query?print_stats", timeout=2).json()
+            
+            r = await loop.run_in_executor(None, fetch_moonraker)
+            filename = r.get("result", {}).get("status", {}).get("print_stats", {}).get("filename", "")
 
-            filename = ""
-            try:
-                filename = r["result"]["status"]["print_stats"].get("filename", "") or ""
-            except Exception:
-                filename = ""
-
-            # Nur wenn neue Datei erkannt
             if filename and filename != current_data["last_analyzed_file"]:
                 log_event(f"[SLICER] Neue Datei erkannt: {filename}")
+                
+                def fetch_gcode():
+                    return requests.get(f"http://{PRINTER_IP}/server/files/gcodes/{filename}", 
+                                        headers={'Range': 'bytes=0-50000'}, timeout=5)
+                
+                resp = await loop.run_in_executor(None, fetch_gcode)
 
-                # Gcode lesen (nur Anfang reicht, da M191/M141 meist am Start stehen)
-                file_url = f"http://{PRINTER_IP}/server/files/gcodes/{filename}"
-                resp = requests.get(file_url, headers={'Range': 'bytes=0-50000'}, timeout=5)
-
-                # Suche M191 Sxx oder M141 Sxx
                 if resp.status_code in [200, 206]:
                     import re
                     match = re.search(r'(?:M191|M141)\s+S(\d+)', resp.text)
@@ -177,316 +163,175 @@ async def slicer_auto_parser():
                         current_data["slicer_soll"] = new_target
                         current_data["last_analyzed_file"] = filename
 
-                        # Publish Anzeige-Sensoren
                         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_soll", int(new_target), retain=True)
                         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_target_temp", int(new_target), retain=True)
                         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_file", filename, retain=True)
 
-                        log_event(f"[SLICER] gefunden: {new_target}°C (priority={'ON' if current_data['slicer_priority_mode'] else 'OFF'})")
-
-                        # Wenn Priority aktiv: sofort übernehmen
                         if current_data["slicer_priority_mode"] and new_target > 15:
                             current_data["kammer_soll"] = new_target
-
-                            # Panda sofort setzen
                             if panda_ws:
                                 asyncio.run_coroutine_threadsafe(
                                     panda_ws.send(json.dumps({"settings": {"set_temp": int(new_target)}})),
                                     main_loop
                                 )
-
-                            # HA MQTT State aktualisieren
                             mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/soll", int(new_target), retain=True)
                     else:
-                        # Auch ohne Treffer Datei merken, damit nicht dauernd neu geladen wird
                         current_data["last_analyzed_file"] = filename
                         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_file", filename, retain=True)
-                        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_soll", int(current_data["slicer_soll"]), retain=True)
-                        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_target_temp", int(current_data["slicer_soll"]), retain=True)
 
         except Exception as e:
-            if DEBUG:
-                print(f"DEBUG:SLICER-ERR:{e}")
-
+            if DEBUG: log_event(f"DEBUG:SLICER-ERR:{e}")
         await asyncio.sleep(5)
 
 # --- MQTT LOGIK ---
 def on_mqtt_message(client, userdata, msg):
-   # if msg.topic.endswith("/set"):
-       # print("MQTT COMMAND:", msg.topic, msg.payload.decode())
-
-   # if msg.topic.endswith("/manual/set"):
-       # print(">>> MANUAL BLOCK ENTERED <<<")
-
     global current_data, last_ha_change, ha_memory
+    global heating_locked, power_forced_off
 
-    # ============================================================
     # ✅ FEHLENDE ENTITÄT 1: switch.panda_breath_mod_slicer_priority_mode
-    # ------------------------------------------------------------
-    # Dashboard erwartet diesen Switch -> sonst "Entity not found"
-    # Topic: panda_breath_mod/slicer_priority_mode
-    # Set:   panda_breath_mod/slicer_priority_mode/set
-    # ============================================================
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode/set":
         payload = msg.payload.decode().strip().lower()
         is_on = payload in ("on", "1", "true")
-
         current_data["slicer_priority_mode"] = is_on
         log_event(">>> SLICER MODE ENTERED <<<", force_console=True)
-        log_event(f"[MQTT->SLICER] slicer_priority_mode -> {is_on}")
-
-        mqtt_client.publish(
-            f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode",
-            "ON" if is_on else "OFF",
-            retain=True
-        )
+        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode", "ON" if is_on else "OFF", retain=True)
         return
 
-    # ============================================================
     # HEIZUNG STOP (LOGIK STOP + MODUS STOP)
-    # ============================================================
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/heizung_stop/set":
-        log_event("[MQTT->PANDA] HEIZUNG STOP", force_console=True)
-
-        # 🔴 WICHTIG: Heiz-Logik deaktivieren
-        current_data["kammer_soll"] = 0.0
-
+        log_event(">>> HEIZUNG STOP <<<", force_console=True)
+        heating_locked = True
         async def stop_flow():
             if panda_ws:
-                await panda_ws.send(json.dumps({
-                    "settings": {
-                        "isrunning": 0,
-                        "work_mode": 0
-                    }
-                }))
-
+                await panda_ws.send(json.dumps({"settings": {"isrunning": 0, "work_mode": 0}}))
         asyncio.run_coroutine_threadsafe(stop_flow(), main_loop)
-
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Standby", retain=True)
-        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/status", "Heizung gestoppt", retain=True)
-
         return
         
     # --- MANUELL MODUS ---
     if msg.topic.endswith("/manual/set"):
         log_event(">>> MANUELL MODE ENTERED <<<", force_console=True)
-        log_event(f">>> MANUELL MODE ENTERED <<<")
-
-        # ✅ SOFORT an HA melden (UI wird sofort grün)
+        heating_locked = False
+        power_forced_off = False
+        current_data["kammer_soll"] = 45.0
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Manuell", retain=True)
-
-        # ✅ FIX: Manuell hebt Slicer-Priority IMMER auf
-        current_data["slicer_priority_mode"] = False
-        mqtt_client.publish(
-            f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode",
-            "OFF",
-            retain=True
-        )
-
+        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode", "OFF", retain=True)
         async def flow():
             if panda_ws:
-                # laufenden Modus sauber stoppen (z.B. Auto oder Dry)
                 await panda_ws.send(json.dumps({"settings": {"isrunning": 0}}))
                 await asyncio.sleep(0.2)
-
-                # Manuell-Modus setzen
                 await panda_ws.send(json.dumps({"settings": {"work_mode": 2}}))
-
         asyncio.run_coroutine_threadsafe(flow(), main_loop)
         return
 
     # --- AUTO MODUS ---
-    if msg.topic == "panda_breath_mod/auto/set":
+    if msg.topic == f"{MQTT_TOPIC_PREFIX}/auto/set":
+        if heating_locked and power_forced_off:
+            log_event("[BLOCKED] Auto ignored due to Power-Off", force_console=True)
+            return
         log_event(">>> AUTO MODE ENTERED <<<", force_console=True)
-        log_event(f">>> AUTO MODE ENTERED <<<")
-
-        # ✅ UI sofort grün
+        heating_locked = False
+        power_forced_off = False
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Automatik", retain=True)
-
         current_data["slicer_priority_mode"] = False
-
         async def flow():
             if panda_ws:
-                # Stop laufenden Modus
-                await panda_ws.send(json.dumps({
-                    "settings": {"isrunning": 0}
-                }))
+                await panda_ws.send(json.dumps({"settings": {"isrunning": 0}}))
                 await asyncio.sleep(0.1)
-
-                # AUTO setzen
-                await panda_ws.send(json.dumps({
-                    "settings": {"work_mode": 1},
-                    "ui_action": "auto"
-                }))
+                await panda_ws.send(json.dumps({"settings": {"work_mode": 1}, "ui_action": "auto"}))
                 await asyncio.sleep(0.1)
-
-                # Start
-                await panda_ws.send(json.dumps({
-                    "settings": {"isrunning": 1}
-                }))
-
+                await panda_ws.send(json.dumps({"settings": {"isrunning": 1}}))
         asyncio.run_coroutine_threadsafe(flow(), main_loop)
         return
         
-        
-    # --- DRYING START (FIXED & STABIL) ---
+    # --- DRY MODUS ---
     if msg.topic.endswith("/drying/set"):
-        current_data["slicer_priority_mode"] = False
-
         log_event(">>> DRYER MODE ENTERED <<<", force_console=True)
-        log_event(f">>> DRYER MODE ENTERED <<<")
-
-        # ✅ SOFORT an HA melden (UI wird sofort grün)
+        heating_locked = False
+        power_forced_off = False
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Dry", retain=True)
-
-        async def d_flow():
+        async def flow():
             if panda_ws:
-                # laufenden Modus sauber stoppen (Auto / Manuell)
                 await panda_ws.send(json.dumps({"settings": {"isrunning": 0}}))
-                await asyncio.sleep(0.2)
-
-                # Dryer Parameter setzen
-                t = int(current_data.get("filament_temp", 50))
-                h = int(current_data.get("filament_timer", 3))
-                await panda_ws.send(json.dumps({
-                    "settings": {
-                        "filament_temp": t,
-                        "filament_timer": h,
-                        "filament_drying_mode": 3  # 3 = Custom
-                    },
-                    "ui_action": "custom"
-                }))
-                await asyncio.sleep(0.5)
-
-                # Dry-Modus starten
-                await panda_ws.send(json.dumps({
-                    "settings": {
-                        "work_mode": 3,
-                        "isrunning": 1
-                    }
-                }))
-
-        asyncio.run_coroutine_threadsafe(d_flow(), main_loop)
-
-        # ❗ KEIN panda_modus publish hier!
-        # Status kommt ausschließlich aus dem WS-Loop (work_mode)
-
+                await asyncio.sleep(0.1)
+                await panda_ws.send(json.dumps({"settings": {"work_mode": 3}}))
+                await asyncio.sleep(0.1)
+                await panda_ws.send(json.dumps({"settings": {"isrunning": 1}}))
+        asyncio.run_coroutine_threadsafe(flow(), main_loop)
         return
-
-    # ------------------------------------------------------------
+        
     # --- START / STOP ---
-    # ------------------------------------------------------------
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/work_on/set":
         payload = msg.payload.decode().strip().lower()
         is_on = payload in ("on", "1", "true")
-
         async def p_flow():
             if panda_ws:
                 if not is_on:
-                    await panda_ws.send(json.dumps({
-                        "settings": {
-                            "isrunning": 0,
-                            "work_mode": 0
-                        }
-                    }))
+                    await panda_ws.send(json.dumps({"settings": {"isrunning": 0, "work_mode": 0}}))
                 else:
-                    await panda_ws.send(json.dumps({
-                        "settings": {
-                            "work_on": 1,
-                            "isrunning": 1
-                        }
-                    }))
-
+                    await panda_ws.send(json.dumps({"settings": {"work_on": 1, "isrunning": 1}}))
         asyncio.run_coroutine_threadsafe(p_flow(), main_loop)
-
-        mqtt_client.publish(
-            f"{MQTT_TOPIC_PREFIX}/work_on",
-            "1" if is_on else "0",
-            retain=True
-        )
+        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/work_on", "1" if is_on else "0", retain=True)
         return
-    # ============================================================
-    # PANDA POWER (Alias für work_on)
-    # Entity darf NICHT geändert werden!
-    # ============================================================
+        
+    # PANDA POWER SWITCH
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/panda_power/set":
-        payload = msg.payload.decode().strip().lower()
-        is_on = payload in ("on", "1", "true")
-
-        async def power_flow():
-            if panda_ws:
-                await panda_ws.send(json.dumps({
-                    "settings": {
-                        "work_on": 1 if is_on else 0
-                    }
-                }))
-
-        asyncio.run_coroutine_threadsafe(power_flow(), main_loop)
-
-        # State zurück an HA spiegeln
-        mqtt_client.publish(
-            f"{MQTT_TOPIC_PREFIX}/panda_power",
-            "ON" if is_on else "OFF",
-            retain=True
-        )
-
+        payload = msg.payload.decode().strip().upper()
+        is_on = payload == "ON"
+        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_power", "ON" if is_on else "OFF", retain=True)
+        if not is_on:
+            log_event(">>> PANDA POWER OFF <<<", force_console=True)
+            heating_locked = True
+            power_forced_off = True
+            async def power_off():
+                if panda_ws:
+                    await panda_ws.send(json.dumps({"settings": {"work_on": 0, "isrunning": 0, "work_mode": 0}}))
+            asyncio.run_coroutine_threadsafe(power_off(), main_loop)
+            mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Standby", retain=True)
+        else:
+            log_event(">>> PANDA POWER ON <<<", force_console=True)
+            heating_locked = False
+            power_forced_off = False
+            async def power_on():
+                if panda_ws:
+                    await panda_ws.send(json.dumps({"settings": {"work_on": 1}}))
+            asyncio.run_coroutine_threadsafe(power_on(), main_loop)
         return
-    # ============================================================
+        
     # TEMPERATUREN & NUMERISCHE SET-WERTE
-    # ============================================================
     try:
-        if not msg.topic.endswith("/set"):
-            return
-
+        if not msg.topic.endswith("/set"): return
         val_str = msg.payload.decode().strip()
-
         try:
             val = float(val_str)
-        except ValueError:
-            if DEBUG:
-                log_event(f"[MQTT] Ignoriere Textwert: '{val_str}' ({msg.topic})")
-            return
-
+        except ValueError: return
         last_ha_change = time.time()
-
         if msg.topic.endswith("/dry_temp/set"):
             current_data["filament_temp"] = int(val)
             mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/dry_temp", int(val), retain=True)
             return
-
         if msg.topic.endswith("/dry_time/set"):
             current_data["filament_timer"] = int(val)
             mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/dry_time", int(val), retain=True)
             return
-
         if msg.topic.endswith("/soll/set"):
             key, data_key = "set_temp", "kammer_soll"
         elif msg.topic.endswith("/limit/set"):
             key, data_key = "hotbedtemp", "bett_limit"
         elif msg.topic.endswith("/filtertemp/set"):
             key, data_key = "filtertemp", "filtertemp"
-        else:
-            return
-
+        else: return
         if data_key == "kammer_soll" and current_data.get("slicer_priority_mode", False):
             ha_memory["kammer_soll"] = val
-            mqtt_client.publish(
-                f"{MQTT_TOPIC_PREFIX}/soll",
-                int(current_data.get("kammer_soll", 0)),
-                retain=True
-            )
+            mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/soll", int(current_data.get("kammer_soll", 0)), retain=True)
             return
-
         current_data[data_key] = val
-
         if panda_ws:
             asyncio.run_coroutine_threadsafe(
                 panda_ws.send(json.dumps({"settings": {key: int(val)}})),
                 main_loop
             )
-
         mqtt_client.publish(msg.topic.replace("/set", ""), int(val), retain=True)
-
     except Exception as e:
         log_event(f"[TEMP-SET-ERR] {e}", force_console=True)
 
@@ -495,13 +340,7 @@ def setup_mqtt():
     client.username_pw_set(MQTT_USER, MQTT_PASS)
     client.on_message = on_mqtt_message
     client.connect(MQTT_BROKER, 1883, 60)
-    log_event(f"[MQTT] Verbunden mit {MQTT_BROKER}:1883", force_console=False)
-    
-    # Original: client.subscribe(f"{MQTT_TOPIC_PREFIX}/+/set")
-    # ✅ FIX: Für neue Entities (switch/button/text) sauber alles mitnehmen:
     client.subscribe(f"{MQTT_TOPIC_PREFIX}/#")
-    log_event(f"[MQTT] Subscribe auf {MQTT_TOPIC_PREFIX}/#")
-    
     client.loop_start()
     return client
 
@@ -509,256 +348,96 @@ mqtt_client = setup_mqtt()
 
 def setup_mqtt_discovery():
     base, dev = MQTT_TOPIC_PREFIX, {"identifiers": [PRINTER_SN], "name": "Panda Breath Mod", "model": "V6.8 Final", "manufacturer": "Biqu"}
-
-    # Alle numerischen Eingabefelder (Numbers)
-    # Hier wurde "filtertemp" hinzugefügt, damit das Feld in HA erscheint
     for sfx, name in [("soll", "Kammer Soll"), ("limit", "Bett Limit"), ("filtertemp", "Filter Fan Activation"), ("dry_temp", "Drying Temp"), ("dry_time", "Drying Time")]:
         u_id = f"pb_v66_{PRINTER_SN}_{sfx}"
-
-        # Bestimme Einheit und Icon basierend auf dem Suffix
         unit = "h" if "time" in sfx else "°C"
         icon = "mdi:fan-clock" if "filter" in sfx else "mdi:thermometer"
-
         mqtt_client.publish(f"homeassistant/number/{u_id}/config", json.dumps({
-            "name": name,
-            "state_topic": f"{base}/{sfx}",
-            "command_topic": f"{base}/{sfx}/set",
-            "unique_id": u_id,
-            "device": dev,
-            "min": 1,
-            "max": 120 if ("limit" in sfx or "filter" in sfx) else 80,
-            "unit_of_measurement": unit,
-            "icon": icon,
-            "mode": "box"
+            "name": name, "state_topic": f"{base}/{sfx}", "command_topic": f"{base}/{sfx}/set",
+            "unique_id": u_id, "device": dev, "min": 1, "max": 120 if ("limit" in sfx or "filter" in sfx) else 80,
+            "unit_of_measurement": unit, "icon": icon, "mode": "box"
         }), retain=True)
 
-     # Panda Modus (Auto / Manuell / Dry)
-    mqtt_client.publish(
-        f"homeassistant/sensor/{base}_panda_modus/config",
-        json.dumps({
-            "name": "Panda Modus",
-            "object_id": f"{base}_panda_modus",
-            "state_topic": f"{base}/panda_modus",
-            "unique_id": f"{PRINTER_SN}_panda_modus",
-            "device": dev,
-            "icon": "mdi:state-machine"
-        }),
-        retain=True
-    )
+    mqtt_client.publish(f"homeassistant/sensor/{base}_panda_modus/config", json.dumps({
+        "name": "Panda Modus", "state_topic": f"{base}/panda_modus", "unique_id": f"{PRINTER_SN}_panda_modus", "device": dev, "icon": "mdi:state-machine"
+    }), retain=True)
        
-    # Kammer Ist Temperatur (FEHLTE)
     mqtt_client.publish(f"homeassistant/sensor/{base}_kammer_ist/config", json.dumps({
-        "name": "Kammer Ist",
-        "object_id": f"{base}_kammer_ist",
-        "state_topic": f"{base}/ist",
-        "unique_id": f"{PRINTER_SN}_kammer_ist",
-        "unit_of_measurement": "°C",
-        "device_class": "temperature",
-        "device": dev
+        "name": "Kammer Ist", "state_topic": f"{base}/ist", "unique_id": f"{PRINTER_SN}_kammer_ist", "unit_of_measurement": "°C", "device_class": "temperature", "device": dev
     }), retain=True)
     
-    # Modus Buttons
     for b in ["manual", "auto", "drying"]:
         mqtt_client.publish(f"homeassistant/button/pb_v66_{b}/config", json.dumps({
-            "name": f"Panda {b.capitalize()}",
-            "command_topic": f"{base}/{b}/set",
-            "unique_id": f"pb_v66_{b}",
-            "device": dev
+            "name": f"Panda {b.capitalize()}", "command_topic": f"{base}/{b}/set", "unique_id": f"pb_v66_{b}", "device": dev
         }), retain=True)
 
-    # Heiz-Status Sensor (Klartext-Anzeige)
-    u_id_status = f"pb_v66_{PRINTER_SN}_status"
-    mqtt_client.publish(f"homeassistant/sensor/{u_id_status}/config", json.dumps({
-        "name": "Panda Heiz Status",
-        "state_topic": f"{base}/status",
-        "unique_id": u_id_status,
-        "device": dev,
-        "icon": "mdi:fire-circle"
+    mqtt_client.publish(f"homeassistant/sensor/{base}_status/config", json.dumps({
+        "name": "Panda Heiz Status", "state_topic": f"{base}/status", "unique_id": f"pb_v66_{PRINTER_SN}_status", "device": dev, "icon": "mdi:fire-circle"
     }), retain=True)
 
-    # Lüfter Status Sensor (Binary Sensor)
-    u_id_fan = f"pb_v66_{PRINTER_SN}_fan"
-    mqtt_client.publish(f"homeassistant/binary_sensor/{u_id_fan}/config", json.dumps({
-        "name": "Panda Filter Lüfter",
-        "state_topic": f"{base}/fan",
-        "unique_id": u_id_fan,
-        "device": dev,
-        "payload_on": "ON",
-        "payload_off": "OFF",
-        "device_class": "fan"
+    mqtt_client.publish(f"homeassistant/binary_sensor/{base}_fan/config", json.dumps({
+        "name": "Panda Filter Lüfter", "state_topic": f"{base}/fan", "unique_id": f"pb_v66_{PRINTER_SN}_fan", "device": dev, "payload_on": "ON", "payload_off": "OFF", "device_class": "fan"
     }), retain=True)
 
-    # ============================================================
-    # ✅ PANDA POWER SWITCH (FEHLTE!)
-    # ------------------------------------------------------------
-    # switch.panda_breath_mod_panda_power
-    # ============================================================
-    mqtt_client.publish(
-        f"homeassistant/switch/{base}_panda_power/config",
-        json.dumps({
-            "name": "Panda Power",
-            "object_id": f"{base}_panda_power",  # -> switch.panda_breath_mod_panda_power
-            "state_topic": f"{base}/panda_power",
-            "command_topic": f"{base}/panda_power/set",
-            "unique_id": f"{PRINTER_SN}_panda_power_sw",
-            "device": dev,
-            "payload_on": "ON",
-            "payload_off": "OFF",
-            "icon": "mdi:power"
-        }),
-        retain=True
-    )
-    # ============================================================
-    # ✅ FEHLENDE ENTITÄTEN AUS DEINEN BILDERN (NEU)
-    # ------------------------------------------------------------
-    # 1) switch.panda_breath_mod_slicer_priority_mode
-    # 2) button.panda_breath_mod_heizung_stop
-    # 3) sensor.panda_breath_mod_slicer_soll (Anzeige)
-    # 4) sensor.panda_breath_mod_slicer_file (Anzeige)
-    # 5) sensor.panda_breath_mod_slicer_target_temp (WICHTIGSTE ENTITÄT)
-    #
-    # WICHTIG:
-    # - Wir setzen object_id explizit, damit entity_id exakt passt.
-    # - So verschwinden die "Unknown entity selected" / "Entity not found" Kacheln.
-    # ============================================================
+    mqtt_client.publish(f"homeassistant/switch/{base}_panda_power/config", json.dumps({
+        "name": "Panda Power", "state_topic": f"{base}/panda_power", "command_topic": f"{base}/panda_power/set", "unique_id": f"{PRINTER_SN}_panda_power_sw", "device": dev, "payload_on": "ON", "payload_off": "OFF", "icon": "mdi:power"
+    }), retain=True)
 
-    # 1) Slicer Priority Switch
     mqtt_client.publish(f"homeassistant/switch/{base}_slicer_priority_mode/config", json.dumps({
-        "name": "Slicer Priority Mode",
-        "object_id": f"{base}_slicer_priority_mode",          # -> switch.panda_breath_mod_slicer_priority_mode
-        "state_topic": f"{base}/slicer_priority_mode",
-        "command_topic": f"{base}/slicer_priority_mode/set",
-        "unique_id": f"{PRINTER_SN}_slicer_priority_mode_sw",
-        "device": dev,
-        "payload_on": "ON",
-        "payload_off": "OFF",
-        "icon": "mdi:priority-high"
+        "name": "Slicer Priority Mode", "state_topic": f"{base}/slicer_priority_mode", "command_topic": f"{base}/slicer_priority_mode/set", "unique_id": f"{PRINTER_SN}_slicer_priority_mode_sw", "device": dev, "payload_on": "ON", "payload_off": "OFF", "icon": "mdi:priority-high"
     }), retain=True)
 
-    # 2) Heizung Stop Button
     mqtt_client.publish(f"homeassistant/button/{base}_heizung_stop/config", json.dumps({
-        "name": "Heizung Stop",
-        "object_id": f"{base}_heizung_stop",                  # -> button.panda_breath_mod_heizung_stop
-        "command_topic": f"{base}/heizung_stop/set",
-        "unique_id": f"{PRINTER_SN}_heizung_stop_btn",
-        "device": dev,
-        "icon": "mdi:radiator-off"
+        "name": "Heizung Stop", "command_topic": f"{base}/heizung_stop/set", "unique_id": f"{PRINTER_SN}_heizung_stop_btn", "device": dev, "icon": "mdi:radiator-off"
     }), retain=True)
 
-    # 3) Slicer Soll Sensor
     mqtt_client.publish(f"homeassistant/sensor/{base}_slicer_soll/config", json.dumps({
-        "name": "Slicer Soll",
-        "object_id": f"{base}_slicer_soll",                   # -> sensor.panda_breath_mod_slicer_soll
-        "state_topic": f"{base}/slicer_soll",
-        "unique_id": f"{PRINTER_SN}_slicer_soll_sns",
-        "device": dev,
-        "unit_of_measurement": "°C",
-        "device_class": "temperature",
-        "icon": "mdi:thermometer-lines"
+        "name": "Slicer Soll", "state_topic": f"{base}/slicer_soll", "unique_id": f"{PRINTER_SN}_slicer_soll_sns", "device": dev, "unit_of_measurement": "°C", "device_class": "temperature"
     }), retain=True)
 
-    # 4) Slicer File Sensor
-    mqtt_client.publish(f"homeassistant/sensor/{base}_slicer_file/config", json.dumps({
-        "name": "Slicer Datei",
-        "object_id": f"{base}_slicer_file",                   # -> sensor.panda_breath_mod_slicer_file
-        "state_topic": f"{base}/slicer_file",
-        "unique_id": f"{PRINTER_SN}_slicer_file_sns",
-        "device": dev,
-        "icon": "mdi:file"
-    }), retain=True)
-
-    # 5) ✅ WICHTIGSTE ENTITÄT: Slicer Target Temp Sensor
     mqtt_client.publish(f"homeassistant/sensor/{base}_slicer_target_temp/config", json.dumps({
-        "name": "Slicer Target Temp",
-        "object_id": f"{base}_slicer_target_temp",            # -> sensor.panda_breath_mod_slicer_target_temp
-        "state_topic": f"{base}/slicer_target_temp",
-        "unique_id": f"{PRINTER_SN}_slicer_target_temp_sns",
-        "device": dev,
-        "unit_of_measurement": "°C",
-        "device_class": "temperature",
-        "icon": "mdi:thermometer-chevron-up"
+        "name": "Slicer Target Temp", "state_topic": f"{base}/slicer_target_temp", "unique_id": f"{PRINTER_SN}_slicer_target_temp_sns", "device": dev, "unit_of_measurement": "°C", "device_class": "temperature"
     }), retain=True)
-    
-    # ============================================================
-    # ✅ VERSION SENSOR
-    # ------------------------------------------------------------
-    # Anzeige der Panda Software Version in Home Assistant
-    # sensor.panda_breath_mod_version
-    # ============================================================
-    mqtt_client.publish(
-        f"homeassistant/sensor/{base}_version/config",
-        json.dumps({
-            "name": "Panda Version",
-            "object_id": f"{base}_version",
-            "state_topic": f"{base}/version",
-            "unique_id": f"{PRINTER_SN}_panda_version",
-            "device": dev,
-            "icon": "mdi:information-outline"
-        }),
-        retain=True
-    )    
 
-# --- WS LOOP ---
+    mqtt_client.publish(f"homeassistant/sensor/{base}_version/config", json.dumps({
+        "name": "Panda Version", "state_topic": f"{base}/version", "unique_id": f"{PRINTER_SN}_panda_version", "device": dev, "icon": "mdi:information-outline"
+    }), retain=True)
+
+# --- WS LOOP (OPTIMIERT: Hält Verbindung bei WiFi-Paketen offen) ---
 async def update_limits_from_ws():
     global panda_ws
     uri = f"ws://{PANDA_IP}/ws"
-
     while True:
         try:
             async with websockets.connect(uri, ping_interval=20) as websocket:
                 log_event(f"[WS] Verbunden mit Panda {PANDA_IP}")
                 panda_ws = websocket
-
-                # Erst identifizieren, dann Settings anfordern
                 await websocket.send(json.dumps({
-                    "printer": {
-                        "ip": HOST_IP,
-                        "sn": PRINTER_SN,
-                        "access_code": ACCESS_CODE
-                    }
+                    "printer": {"ip": HOST_IP, "sn": PRINTER_SN, "access_code": ACCESS_CODE}
                 }))
-                log_event("[WS] Auth an Panda gesendet")
                 await websocket.send(json.dumps({"get_settings": 1}))
-                log_event("[WS] Settings angefordert")
 
                 while True:
                     msg = await websocket.recv()
                     data = json.loads(msg)
 
+                    # ✅ OPTIMIERUNG: Nur verarbeiten, wenn 'settings' im Paket existiert
                     if 'settings' in data:
-
-                        # Neue Werte in den Cache mergen (Delta-Updates sicher machen)
                         last_ws_settings.update(data['settings'])
                         s = last_ws_settings
 
-                        if DEBUG:
-                            log_event(f"WS MERGED: {s}")
-
-                        # IST-Temperatur immer sofort verarbeiten
                         if 'warehouse_temper' in s:
                             current_data["kammer_ist"] = float(s['warehouse_temper'])
-                            mqtt_client.publish(
-                                f"{MQTT_TOPIC_PREFIX}/ist",
-                                s['warehouse_temper']
-                            )
+                            mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/ist", s['warehouse_temper'])
 
-                        # WICHTIG: Alle Werte in current_data schreiben!
-                        # Behebt "Kammer: 0.0" und synchronisiert filtertemp intern
                         if 'set_temp' in s:
                             new_val = float(s['set_temp'])
                             current_data["kammer_soll"] = new_val
-
-                            # IMMER MQTT synchron halten (entscheidender FIX)
-                            mqtt_client.publish(
-                                f"{MQTT_TOPIC_PREFIX}/soll",
-                                int(new_val),
-                                retain=True
-                            )
+                            mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/soll", int(new_val), retain=True)
 
                         if 'hotbedtemp' in s:
                             current_data["bett_limit"] = float(s['hotbedtemp'])
 
-                        # NEU: Filter-Schwelle für die Lüfter-Logik synchronisieren
                         if 'filtertemp' in s:
                             current_data["filtertemp"] = float(s['filtertemp'])
 
@@ -768,135 +447,57 @@ async def update_limits_from_ws():
                         if 'filament_timer' in s:
                             current_data["filament_timer"] = int(s['filament_timer'])
 
-                        # ============================================================
-                        # ✅ Panda Modus Status IMMER sofort auswerten (NICHT im 8s Block)
-                        # ============================================================
+                        # Modus-Auswertung
                         global last_reported_mode, mode_change_hint
-
                         work_mode = s.get("work_mode")
+                        work_on = s.get("work_on")
 
-                        if work_mode == 1:
-                            modus = "Automatik"
-                        elif work_mode == 2:
-                            modus = "Manuell"
-                        elif work_mode == 3:
-                            modus = "Dry"
-                        else:
+                        if heating_locked:
                             modus = "Standby"
-                        # Nur publishen, wenn sich der Modus wirklich geändert hat
+                        else:
+                            if work_on in (1, True, "1"):
+                                if work_mode == 1: modus = "Automatik"
+                                elif work_mode == 2: modus = "Manuell"
+                                elif work_mode == 3: modus = "Dry"
+                                else: modus = "Standby"
+                            else: modus = "Standby"
+                        
                         if modus != last_reported_mode:
-                            mqtt_client.publish(
-                                f"{MQTT_TOPIC_PREFIX}/panda_modus",
-                                modus,
-                                retain=True
-                            )
-                            mode_change_hint = f" | Modus→{modus}"
+                            mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", modus, retain=True)
                             last_reported_mode = modus
 
-                        # Nur wenn HA nicht gerade selbst was sendet (last_ha_change Schutz),
-                        # synchronisieren wir die Werte zurück an MQTT
+                        # MQTT Sync zurück an HA
                         if (time.time() - last_ha_change) > 8.0:
-
-                            # Filter-Schwelle an Home Assistant senden
-                            if 'filtertemp' in s:
-                                mqtt_client.publish(
-                                    f"{MQTT_TOPIC_PREFIX}/filtertemp",
-                                    int(s['filtertemp']),
-                                    retain=True
-                                )
-
-                            # Bett-Limit (Sicherheit)
-                            if 'hotbedtemp' in s:
-                                mqtt_client.publish(
-                                    f"{MQTT_TOPIC_PREFIX}/limit",
-                                    int(s['hotbedtemp']),
-                                    retain=True
-                                )
-
-                            # Power Status
+                            if 'filtertemp' in s: mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/filtertemp", int(s['filtertemp']), retain=True)
+                            if 'hotbedtemp' in s: mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/limit", int(s['hotbedtemp']), retain=True)
                             if 'work_on' in s:
-                                p_val = "1" if s['work_on'] in (True, 1, "1") else "0"
+                                p_val = "0" if power_forced_off else ("1" if s['work_on'] in (True, 1, "1") else "0")
+                                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/work_on", p_val, retain=True)
+                                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_power", "ON" if p_val == "1" else "OFF", retain=True)
+                            if 'filament_temp' in s: mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/dry_temp", int(s['filament_temp']), retain=True)
+                            if 'filament_timer' in s: mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/dry_time", int(s['filament_timer']), retain=True)
+                            
+                            # Slicer States sync
+                            mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode", "ON" if current_data.get("slicer_priority_mode", False) else "OFF", retain=True)
+                            mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_soll", int(current_data.get("slicer_soll", 0)), retain=True)
+                            mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_target_temp", int(current_data.get("slicer_soll", 0)), retain=True)
+                            mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_file", current_data.get("last_analyzed_file", ""), retain=True)
 
-                                # work_on state
-                                mqtt_client.publish(
-                                    f"{MQTT_TOPIC_PREFIX}/work_on",
-                                    p_val,
-                                    retain=True
-                                )
-
-                                # panda_power state synchronisieren (WICHTIG!)
-                                mqtt_client.publish(
-                                    f"{MQTT_TOPIC_PREFIX}/panda_power",
-                                    "ON" if p_val == "1" else "OFF",
-                                    retain=True
-                                )
-                                
-                            # Dryer Werte (Trockner)
-                            if 'filament_temp' in s:
-                                mqtt_client.publish(
-                                    f"{MQTT_TOPIC_PREFIX}/dry_temp",
-                                    int(s['filament_temp']),
-                                    retain=True
-                                )
-
-                            if 'filament_timer' in s:
-                                mqtt_client.publish(
-                                    f"{MQTT_TOPIC_PREFIX}/dry_time",
-                                    int(s['filament_timer']),
-                                    retain=True
-                                )
-
-                            # ✅ Slicer Priority Switch State immer mit pushen
-                            mqtt_client.publish(
-                                f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode",
-                                "ON" if current_data.get("slicer_priority_mode", False) else "OFF",
-                                retain=True
-                            )
-
-                            # ✅ Slicer Anzeige Sensoren regelmäßig mit pushen
-                            mqtt_client.publish(
-                                f"{MQTT_TOPIC_PREFIX}/slicer_soll",
-                                int(current_data.get("slicer_soll", 0)),
-                                retain=True
-                            )
-
-                            mqtt_client.publish(
-                                f"{MQTT_TOPIC_PREFIX}/slicer_target_temp",
-                                int(current_data.get("slicer_soll", 0)),
-                                retain=True
-                            )
-
-                            mqtt_client.publish(
-                                f"{MQTT_TOPIC_PREFIX}/slicer_file",
-                                current_data.get("last_analyzed_file", ""),
-                                retain=True
-                            )
-
-                        # Debug-Log für dich im Terminal
-                        if DEBUG:
-                            print(
-                                f"DEBUG: WS-Sync -> "
-                                f"Soll: {current_data['kammer_soll']} | "
-                                f"Ist: {current_data['kammer_ist']} | "
-                                f"Filter: {current_data.get('filtertemp')}"
-                            )
+                    # ✅ OPTIMIERUNG: Bei WiFi/Info Paketen Verbindung NICHT schließen
+                    else:
+                        continue
 
         except Exception as e:
-            if DEBUG:
-                print(f"DEBUG: WS-Error: {e}")
-
+            if DEBUG: log_event(f"WS-Error: {e}")
             panda_ws = None
             await asyncio.sleep(5)
 
 # --- EMULATION ---
 async def handle_panda(reader, writer):
-    global last_switch_time, global_heating_state, terminal_cleared
-    global mode_change_hint
-    
+    global last_switch_time, global_heating_state, terminal_cleared, mode_change_hint
     setup_mqtt_discovery()
     log_event("[SERVER] Panda Client verbunden")
     try:
-        # Initialer Handshake
         await reader.read(1024); writer.write(b'\x20\x02\x00\x00'); await writer.drain()
         sub_data = await reader.read(1024)
         if sub_data and sub_data[0] == 0x82:
@@ -904,143 +505,88 @@ async def handle_panda(reader, writer):
 
         while not writer.is_closing():
             try:
-                # 1. Daten von Home Assistant holen (Betttemperatur)
-                h_resp = requests.get(
-                    HA_URL,
-                    headers={"Authorization": f"Bearer {HA_TOKEN}"},
-                    timeout=2
-                )
+                # ============================================================
+                # ✅ OPTIMIERUNG: HA REQUEST AUSLAGERN (verhindert TLS-Timeout)
+                # ------------------------------------------------------------
+                # requests.get ist BLOCKIEREND.
+                # Wenn HA langsam antwortet, friert der TLS Loop ein
+                # → Panda Web-UI meldet "Communication interruption".
+                # Deshalb wird der Request in einen Thread ausgelagert.
+                # ============================================================
 
-                bed_raw = h_resp.json().get("state", "0")
+                loop = asyncio.get_running_loop()
 
-                try:
-                    bed_ist = float(bed_raw)
-                except (ValueError, TypeError):
-                    log_event(f"[HA] Bett Sensor ungültig: {bed_raw}", force_console=True)
-                    await asyncio.sleep(2)
-                    continue
+                def fetch_ha():
+                    return requests.get(
+                        HA_URL,
+                        headers={"Authorization": f"Bearer {HA_TOKEN}"},
+                        timeout=2
+                    )
 
-                # 2. Variablen laden
+                h_resp = await loop.run_in_executor(None, fetch_ha)
+
+                bed_ist = float(h_resp.json().get("state", "0"))
                 target, ist, limit = current_data["kammer_soll"], current_data["kammer_ist"], current_data["bett_limit"]
-                f_threshold = current_data.get("filtertemp", 30.0)  # Schwelle für Lüfter
+                f_threshold = current_data.get("filtertemp", 30.0)
+                work_mode = int(last_ws_settings.get("work_mode", 0) or 0)
 
-                # 3. Heiz-Logik & Hysterese
-                if target > 15:
+                if work_mode == 0:
+                    target_state, info = 20.0, "Standby"
+                    global_heating_state = 20.0
+                else:
                     target_state = global_heating_state
-                    if bed_ist < limit:
-                        target_state, info = 20.0, "Bett-Stop"
-                    elif ist >= target:
-                        target_state, info = 20.0, "Ziel erreicht"
-                    elif ist <= (target - HYSTERESE):
-                        target_state, info = 85.0, "Heizen..."
-                    else:
-                        info = "Hysterese"
-
-                    # Schaltschutz (MIN_SWITCH_TIME)
+                    if bed_ist < limit: target_state, info = 20.0, "Bett-Stop"
+                    elif ist >= target: target_state, info = 20.0, "Ziel erreicht"
+                    elif ist <= (target - HYSTERESE): target_state, info = 85.0, "Heizen..."
+                    else: info = "Hysterese"
                     if target_state != global_heating_state and (time.time() - last_switch_time) > MIN_SWITCH_TIME:
                         global_heating_state, last_switch_time = target_state, time.time()
-                else:
-                    info = "Standby"
-                    global_heating_state = 20.0
 
-                # 4. NEU: Lüfter-Logik (Filter Fan)
-                # Lüfter ist AN, wenn das Bett wärmer ist als die eingestellte filtertemp
                 fan_state = "ON" if bed_ist >= f_threshold else "OFF"
-
-                # 5. Anzeige & MQTT Update
-                # ✅ Zusatz: Slicer Info in der Terminalzeile
                 sl = int(current_data.get("slicer_soll", 0))
                 sl_prio = "SL-PRIO" if current_data.get("slicer_priority_mode", False) else "NORMAL"
-                line = (
-                    f"\r🟢 ONLINE | Bed:{bed_ist}° | Kammer:{target}/{ist}° | "
-                    f"Heiz:{'AN' if global_heating_state > 50 else 'AUS'} | "
-                    f"Fan:{fan_state} | {info} | {sl_prio}:{sl}°"
-                    f"{mode_change_hint}"
-                )
-                
-
-                # 👉 Hinweis nur einmal anzeigen
+                line = f"\r🟢 ONLINE | Bed:{bed_ist}° | Kammer:{target}/{ist}° | Heiz:{'AN' if global_heating_state > 50 else 'AUS'} | Fan:{fan_state} | {info} | {sl_prio}:{sl}°{mode_change_hint}"
                 mode_change_hint = ""
                 if not terminal_cleared: os.system('clear'); terminal_cleared = True
                 print(f"{line}\033[K", end="", flush=True)
 
-                # Status-Entitäten an HA senden
                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/status", info, retain=True)
-                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_heiz_status", info, retain=True)  # ✅ FIX: Heiz-Status Entity füttern
+                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_heiz_status", info, retain=True)
                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/fan", fan_state, retain=True)
                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/version", PANDA_VERSION, retain=True)
-                
-                # ✅ Slicer Entities regelmäßig aktuell halten
-                mqtt_client.publish(
-                    f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode",
-                    "ON" if current_data.get("slicer_priority_mode", False) else "OFF",
-                    retain=True
-                )
-                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_soll", int(current_data.get("slicer_soll", 0)), retain=True)
-                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_target_temp", int(current_data.get("slicer_soll", 0)), retain=True)  # ✅ WICHTIGSTE ENTITÄT
-                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_file", current_data.get("last_analyzed_file", ""), retain=True)
 
-                # 6. Report-Paket für den Panda bauen
-                data = {
-                    "print": {
-                        "command": "push_status",
-                        "msg": 1,
-                        "sequence_id": str(int(time.time())),
-                        "warehouse_temper": float(ist),
-                        "bed_temper": float(bed_ist),
-                        "chamber_temper": float(ist),
-                        "bed_target_temper": 100.0 if global_heating_state > 50 else 0.0,
-                        "gcode_state": "RUNNING" if global_heating_state > 50 else "IDLE",
-                        "mc_percent": 50
-                    }
-                }
-
+                data = {"print": {"command": "push_status", "msg": 1, "sequence_id": str(int(time.time())), "warehouse_temper": float(ist), "bed_temper": float(bed_ist), "chamber_temper": float(ist), "bed_target_temper": 100.0 if global_heating_state > 50 else 0.0, "gcode_state": "RUNNING" if global_heating_state > 50 else "IDLE", "mc_percent": 50}}
                 payload = json.dumps(data).encode()
                 topic = f"device/{PRINTER_SN}/report".encode()
                 vh = len(topic).to_bytes(2, 'big') + topic
-                rem = len(vh) + len(payload)
-
-                # MQTT Variable Length Encoding
-                pkt = b'\x30'
+                rem, pkt = len(vh) + len(payload), b'\x30'
                 X = rem
                 while X > 0:
                     eb = X % 128
                     X //= 128
                     if X > 0: eb |= 128
                     pkt += eb.to_bytes(1, 'big')
-
-                writer.write(pkt + vh + payload)
-                await writer.drain()
-
+                writer.write(pkt + vh + payload); await writer.drain()
             except Exception as e:
-                log_event(f"[EMU-LOOP-ERR] {e}", force_console=True)
-                break
-
+                log_event(f"[EMU-LOOP-ERR] {e}", force_console=True); break
             await asyncio.sleep(2)
-
     finally:
         writer.close()
 
 async def main():
     global main_loop
     main_loop = asyncio.get_running_loop()
-
-    # ✅ Original WS Sync Task
     asyncio.create_task(update_limits_from_ws())
-
-    # ✅ NEU: Slicer Parser Task
     asyncio.create_task(slicer_auto_parser())
-
     ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     ssl_ctx.load_cert_chain(certfile="cert.pem", keyfile="key.pem")
-    ssl_ctx.set_ciphers('DEFAULT@SECLEVEL=1')
+    
+    # ✅ OPTIMIERUNG: SECLEVEL=0 für Panda Touch Kompatibilität (Legacy TLS)
+    ssl_ctx.set_ciphers('DEFAULT@SECLEVEL=0:ALL')
+    
     server = await asyncio.start_server(handle_panda, '0.0.0.0', 8883, ssl=ssl_ctx)
-    log_event("[SERVER] TLS Server auf 0.0.0.0:8883 gestartet")
-    print(f"\n🚀 Panda-Logic-Sync {PANDA_VERSION}") # Nutzt die Variable
-    print(f"👉 BITTE 'BIND' DRÜCKEN FÜR START...\n")
-
-    log_event(f"🚀 {PANDA_VERSION} gestartet.", force_console=True) # Nutzt die Variable
-
+    log_event(f"[SERVER] TLS Server gestartet auf 8883 (SECLEVEL=0)")
+    print(f"\n🚀 Panda-Logic-Sync {PANDA_VERSION}\n")
     async with server: await server.serve_forever()
 
 if __name__ == "__main__":
