@@ -30,11 +30,11 @@ HYSTERESE = 1.5
 # Schutzzeit: Mindestpause (in Sek.) zwischen zwei Schaltvorgängen, um die Hardware zu schonen.
 MIN_SWITCH_TIME = 10
 # MQTT Broker Adresse: Die IP-Adresse deines Home Assistant oder MQTT-Servers.
-MQTT_BROKER = "192.168.8.195"
+MQTT_BROKER = "192.168.x.xxx"
 # MQTT Benutzername: In HA unter Einstellungen -> Personen -> Benutzer angelegt.
-MQTT_USER = "mqttadmin"
+MQTT_USER = "xxxxxx"
 # MQTT Passwort: Das zugehörige Passwort für den MQTT-Benutzer.
-MQTT_PASS = "rootlu"
+MQTT_PASS = "xxxxxx"
 
 # MQTT Präfix: Die Basis für alle Topics (z.B. panda_breath_mod/soll).
 # ⚠️ WICHTIG: Deine Screenshots zeigen entity_ids wie:
@@ -45,17 +45,17 @@ MQTT_PASS = "rootlu"
 MQTT_TOPIC_PREFIX = "panda_breath_mod"
 
 # Host IP: Die statische IP-Adresse des Rechners, auf dem dieses Skript läuft.
-HOST_IP = "192.168.8.174"
+HOST_IP = "192.168.x.xxx"
 # Panda IP: Die IP-Adresse deines Panda Touch Displays im WLAN.
-PANDA_IP = "192.168.8.142"
+PANDA_IP = "192.168.x.xxx"
 # Seriennummer: Die SN deines Druckers (findest du in der Panda-UI oder auf dem Sticker).
 PRINTER_SN = "01P00A123456789"
 # Access Code: Der Sicherheitscode deines Druckers für die WebSocket-Verbindung.
 ACCESS_CODE = "01P00A12"
 # HA API URL: Link zum Bett-Temperatur-Sensor deines Druckers in Home Assistant.
-HA_URL = "http://192.168.8.195:8123/api/states/sensor.ks1c_bed_temperature"
+HA_URL = "http://192.168.x.xxx:8123/api/states/sensor.ks1c_bed_temperature"
 # HA Token: Ein 'Long-Lived Access Token' (erstellt im HA-Profil ganz unten).
-HA_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJmZjg4NzFjOTRiMTc0OTJlYTE4MWVhNDY1YmI5M2JjNiIsImlhdCI6MTc3MDI5OTE1OSwiZXhwIjoyMDg1NjU5MTU5fQ.Biu6Ood1bH-xMBHQnfRFE6h2yiFMWWywTfCnFmji61o"
+HA_TOKEN = "eyJhbGciOiJIUzI1Ni............................................"
 
 # ============================================================
 # ✅ SLICER MODE (NEU)
@@ -64,7 +64,7 @@ HA_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJmZjg4NzFjOTRiMTc0OTJ
 # Funktion: liest beim Druckstart die ersten Bytes der Gcode Datei,
 # sucht M191 Sxx / M141 Sxx und setzt slicer_soll.
 # ============================================================
-PRINTER_IP = "192.168.8.140"
+PRINTER_IP = "192.168.x.xxx"
 # ==========================================
 
 # current_data nutzt jetzt die exakten Namen aus der Hardware (filament_temp/timer)
