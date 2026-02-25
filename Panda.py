@@ -14,10 +14,11 @@ from paho.mqtt.enums import CallbackAPIVersion
 # - Entfernt NICHTS: Original bleibt, Erweiterungen sind additiv/ersetzend innerhalb
 #   der bestehenden Struktur (nur ergänzt/erweitert).
 # ============================================================
-PANDA_VERSION = "v1.7"
+PANDA_VERSION = "v1.8"
 last_reported_mode = None
 mode_change_hint = ""
 heating_locked = False
+global_lock = False  # NEU: Sicherheits-Sperre für alle Modi
 # ==========================================
 # KONFIGURATION - BITTE HIER ANPASSEN
 # ==========================================
@@ -55,7 +56,7 @@ ACCESS_CODE = "01P00A12"
 # HA API URL: Link zum Bett-Temperatur-Sensor deines Druckers in Home Assistant.
 HA_URL = "http://192.168.x.xxx:8123/api/states/sensor.ks1c_bed_temperature"
 # HA Token: Ein 'Long-Lived Access Token' (erstellt im HA-Profil ganz unten).
-HA_TOKEN = "eyJhbGciOiJIUzI1NiI..........................................."
+HA_TOKEN = "eyJhbGciOiJIUzI1Ni............................................"
 
 # ============================================================
 # ✅ SLICER MODE (NEU)
@@ -186,8 +187,29 @@ async def slicer_auto_parser():
 
 # --- MQTT LOGIK ---
 def on_mqtt_message(client, userdata, msg):
+    # ✅ FIX: Alle globalen Deklarationen MÜSSEN am Anfang der Funktion stehen
     global current_data, last_ha_change, ha_memory
-    global heating_locked, power_forced_off
+    global heating_locked, power_forced_off, global_lock 
+
+    # ============================================================
+    # ✅ UNLOCK LOGIK (Muss VOR dem Lock-Check kommen!)
+    # ------------------------------------------------------------
+    if msg.topic == f"{MQTT_TOPIC_PREFIX}/unlock/set":
+        log_event(">>> SYSTEM UNLOCKED <<<", force_console=True)
+        global_lock = False
+        heating_locked = False
+        power_forced_off = False
+
+        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/lock_status", "UNLOCKED", retain=True)
+        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/status", "Bereit", retain=True)
+        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Standby", retain=True)
+        return
+
+    # 🛑 GLOBAL LOCK CHECK: Wenn gesperrt (Emergency Stop), wird alles andere ignoriert
+    if global_lock:
+        if msg.topic.endswith("/set"):
+            log_event(f"[BLOCKED] System ist LOCKED! Befehl ignoriert: {msg.topic}", force_console=True)
+        return
 
     # ✅ FEHLENDE ENTITÄT 1: switch.panda_breath_mod_slicer_priority_mode
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode/set":
@@ -198,17 +220,28 @@ def on_mqtt_message(client, userdata, msg):
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode", "ON" if is_on else "OFF", retain=True)
         return
 
-    # HEIZUNG STOP (LOGIK STOP + MODUS STOP)
+    # ============================================================
+    # ✅ HEIZUNG STOP (NOT-AUS MIT LOCK)
+    # ------------------------------------------------------------
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/heizung_stop/set":
-        log_event(">>> HEIZUNG STOP <<<", force_console=True)
-        heating_locked = True
+        log_event(">>> !!! EMERGENCY STOP & LOCK !!! <<<", force_console=True)
+        
+        global_lock = True    # 🔒 Alles komplett sperren
+        heating_locked = True # 🔒 Heiz-Logik blockieren
+
         async def stop_flow():
             if panda_ws:
+                # Wir setzen den Panda auf Standby (work_mode 0, isrunning 0)
                 await panda_ws.send(json.dumps({"settings": {"isrunning": 0, "work_mode": 0}}))
-        asyncio.run_coroutine_threadsafe(stop_flow(), main_loop)
-        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Standby", retain=True)
-        return
         
+        asyncio.run_coroutine_threadsafe(stop_flow(), main_loop)
+
+        # Status an HA melden
+        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/lock_status", "LOCKED", retain=True)
+        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "LOCKED", retain=True)
+        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/status", "Emergency Lock", retain=True)
+        return
+
     # --- MANUELL MODUS ---
     if msg.topic.endswith("/manual/set"):
         log_event(">>> MANUELL MODE ENTERED <<<", force_console=True)
@@ -404,6 +437,23 @@ def setup_mqtt_discovery():
         "name": "Panda Version", "state_topic": f"{base}/version", "unique_id": f"{PRINTER_SN}_panda_version", "device": dev, "icon": "mdi:information-outline"
     }), retain=True)
 
+# ✅ NEUE ENTITÄTEN FÜR LOCK-SYSTEM
+    mqtt_client.publish(f"homeassistant/sensor/{base}_lock_status/config", json.dumps({
+        "name": "Panda Lock Status",
+        "state_topic": f"{base}/lock_status",
+        "unique_id": f"{PRINTER_SN}_lock_status",
+        "device": dev,
+        "icon": "mdi:lock"
+    }), retain=True)
+
+    mqtt_client.publish(f"homeassistant/button/{base}_unlock/config", json.dumps({
+        "name": "Panda Unlock",
+        "command_topic": f"{base}/unlock/set",
+        "unique_id": f"{PRINTER_SN}_unlock_btn",
+        "device": dev,
+        "icon": "mdi:lock-open-variant"
+    }), retain=True)
+    
 # --- WS LOOP (OPTIMIERT: Hält Verbindung bei WiFi-Paketen offen) ---
 async def update_limits_from_ws():
     global panda_ws
