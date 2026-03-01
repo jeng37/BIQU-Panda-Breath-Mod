@@ -24,6 +24,10 @@ last_switch_time = 0
 bed_sensor_error = False
 bind_confirmed = False
 bind_warning_shown = False
+# --- POWER CONFIRM (gegen ON->OFF "Bounce") ---
+desired_power_state = None           # None / True / False
+power_pending_until = 0.0
+POWER_CONFIRM_TIMEOUT = 6.0          # Sekunden warten, bis WS "work_on" nachzieht
 # ==========================================
 # KONFIGURATION - BITTE HIER ANPASSEN
 # ==========================================
@@ -61,7 +65,7 @@ ACCESS_CODE = "01P00A12"
 # HA API URL: Link zum Bett-Temperatur-Sensor deines Druckers in Home Assistant.
 HA_URL = "http://192.168.x.xxx:8123/api/states/sensor.ks1c_bed_temperature"
 # HA Token: Ein 'Long-Lived Access Token' (erstellt im HA-Profil ganz unten).
-HA_TOKEN = "eyJhbGciOiJIUzI1Ni............................................"
+HA_TOKEN = "eyJhbGciOiJIUzI1NiI..........................................."
 
 # ============================================================
 # ✅ SLICER MODE (NEU)
@@ -125,8 +129,8 @@ logging.basicConfig(
 )
 
 # 🔇 Externe Libraries ruhigstellen (nur wenn DEBUG=False relevant)
-logging.getLogger("urllib3").setLevel(logging.CRITICAL)
-logging.getLogger("websockets").setLevel(logging.CRITICAL)
+#logging.getLogger("urllib3").setLevel(logging.CRITICAL)
+#logging.getLogger("websockets").setLevel(logging.CRITICAL)
 
 file_logger = logging.getLogger("PandaFullLog")
 file_logger.propagate = False
@@ -346,27 +350,69 @@ def on_mqtt_message(client, userdata, msg):
         
     # PANDA POWER SWITCH
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/panda_power/set":
+        global desired_power_state, power_pending_until
+
         payload = msg.payload.decode().strip().upper()
         is_on = payload == "ON"
-        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_power", "ON" if is_on else "OFF", retain=True)
+
+        # Optimistic / Pending setzen (damit WS-Status nicht sofort zurückflippt)
+        desired_power_state = is_on
+        power_pending_until = time.time() + POWER_CONFIRM_TIMEOUT
+
+        mqtt_client.publish(
+            f"{MQTT_TOPIC_PREFIX}/panda_power",
+            "ON" if is_on else "OFF",
+            retain=True
+        )
+
         if not is_on:
             log_event(">>> PANDA POWER OFF <<<", force_console=True)
             heating_locked = True
             power_forced_off = True
-            async def power_off():
-                if panda_ws:
-                    await panda_ws.send(json.dumps({"settings": {"work_on": 0, "isrunning": 0, "work_mode": 0}}))
-            asyncio.run_coroutine_threadsafe(power_off(), main_loop)
-            mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Standby", retain=True)
+
+            async def hard_power_off():
+                try:
+                    if panda_ws:
+                        # Reihenfolge wie von dir bewiesen:
+                        await panda_ws.send(json.dumps({"settings": {"isrunning": 0}}))
+                        await asyncio.sleep(0.2)
+
+                        await panda_ws.send(json.dumps({"settings": {"work_mode": 0}}))
+                        await asyncio.sleep(0.2)
+
+                        # WICHTIG: bool false (nicht 0)
+                        await panda_ws.send(json.dumps({"settings": {"work_on": False}}))
+                        await asyncio.sleep(0.2)
+
+                except Exception as e:
+                    log_event(f"[POWER-OFF-ERR] {e}")
+
+            asyncio.run_coroutine_threadsafe(hard_power_off(), main_loop)
+
+            mqtt_client.publish(
+                f"{MQTT_TOPIC_PREFIX}/panda_modus",
+                "Standby",
+                retain=True
+            )
+
+            return
+
         else:
             log_event(">>> PANDA POWER ON <<<", force_console=True)
             heating_locked = False
             power_forced_off = False
+
             async def power_on():
-                if panda_ws:
-                    await panda_ws.send(json.dumps({"settings": {"work_on": 1}}))
+                try:
+                    if panda_ws:
+                        # ON als bool True
+                        await panda_ws.send(json.dumps({"settings": {"work_on": True}}))
+                        await asyncio.sleep(0.2)
+                except Exception as e:
+                    log_event(f"[POWER-ON-ERR] {e}")
+
             asyncio.run_coroutine_threadsafe(power_on(), main_loop)
-        return
+            return
         
     # TEMPERATUREN & NUMERISCHE SET-WERTE
     try:
@@ -493,7 +539,7 @@ def setup_mqtt_discovery():
 
 # --- WS LOOP (OPTIMIERT: Hält Verbindung bei WiFi-Paketen offen) ---
 async def update_limits_from_ws():
-    global panda_ws
+    global panda_ws, bind_confirmed, bind_warning_shown
     uri = f"ws://{PANDA_IP}/ws"
 
     while True:
@@ -537,21 +583,28 @@ async def update_limits_from_ws():
         # ===== NORMALER WS BETRIEB =====
         try:
             async with websockets.connect(uri, ping_interval=20) as websocket:
+
                 log_event(f"[WS] Verbunden mit Panda {PANDA_IP}")
                 panda_ws = websocket
 
-                await websocket.send(json.dumps({
-                    "printer": {
-                        "ip": HOST_IP,
-                        "sn": PRINTER_SN,
-                        "access_code": ACCESS_CODE
-                    }
-                }))
+                # Nur binden wenn NICHT power_forced_off
+                if not power_forced_off:
 
-                await websocket.send(json.dumps({"get_settings": 1}))
+                    await websocket.send(json.dumps({
+                        "printer": {
+                            "ip": HOST_IP,
+                            "sn": PRINTER_SN,
+                            "access_code": ACCESS_CODE
+                        }
+                    }))
+
+                    await websocket.send(json.dumps({
+                        "get_settings": 1
+                    }))
+
                 # ⏳ Bind Watchdog starten
                 asyncio.create_task(bind_watchdog())
-                
+
                 while True:
                     msg = await websocket.recv()
                     data = json.loads(msg)
@@ -662,9 +715,23 @@ async def update_limits_from_ws():
                                 )
 
                             if 'work_on' in s:
-                                p_val = "0" if power_forced_off else (
-                                    "1" if s['work_on'] in (True, 1, "1") else "0"
-                                )
+                                global desired_power_state, power_pending_until
+
+                                ws_is_on = s['work_on'] in (True, 1, "1")
+                                now = time.time()
+
+                                # Während Pending: nicht zurückflippen
+                                if desired_power_state is not None and now < power_pending_until:
+                                    p_val = "1" if desired_power_state else "0"
+
+                                    # Sobald bestätigt → Pending löschen
+                                    if ws_is_on == desired_power_state:
+                                        desired_power_state = None
+                                        power_pending_until = 0.0
+
+                                else:
+                                    # Normalbetrieb
+                                    p_val = "0" if power_forced_off else ("1" if ws_is_on else "0")
 
                                 mqtt_client.publish(
                                     f"{MQTT_TOPIC_PREFIX}/work_on",
