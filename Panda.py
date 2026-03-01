@@ -14,7 +14,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 # - Entfernt NICHTS: Original bleibt, Erweiterungen sind additiv/ersetzend innerhalb
 #   der bestehenden Struktur (nur ergänzt/erweitert).
 # ============================================================
-PANDA_VERSION = "v1.7"
+PANDA_VERSION = "v1.8"
 last_reported_mode = None
 mode_change_hint = ""
 heating_locked = False
@@ -22,6 +22,8 @@ global_lock = False  # NEU: Sicherheits-Sperre für alle Modi
 global_heating_state = 20.0
 last_switch_time = 0
 bed_sensor_error = False
+bind_confirmed = False
+bind_warning_shown = False
 # ==========================================
 # KONFIGURATION - BITTE HIER ANPASSEN
 # ==========================================
@@ -122,6 +124,10 @@ logging.basicConfig(
     format="%(levelname)s:%(name)s:%(message)s"
 )
 
+# 🔇 Externe Libraries ruhigstellen (nur wenn DEBUG=False relevant)
+logging.getLogger("urllib3").setLevel(logging.CRITICAL)
+logging.getLogger("websockets").setLevel(logging.CRITICAL)
+
 file_logger = logging.getLogger("PandaFullLog")
 file_logger.propagate = False
 file_logger.setLevel(logging.INFO)
@@ -142,7 +148,7 @@ def log_event(msg, force_console=False):
 
     # 2️⃣ Konsole nur bei DEBUG oder Force
     if DEBUG or force_console:
-        print(f"INFO:PandaDebug:{msg}")
+        print(f" INFO:PandaDebug:{msg}")
             
 # --- HELPER ---
 def safe_float(v, default=0.0):
@@ -486,7 +492,6 @@ def setup_mqtt_discovery():
     
 
 # --- WS LOOP (OPTIMIERT: Hält Verbindung bei WiFi-Paketen offen) ---
-# --- WS LOOP (OPTIMIERT: Hält Verbindung bei WiFi-Paketen offen) ---
 async def update_limits_from_ws():
     global panda_ws
     uri = f"ws://{PANDA_IP}/ws"
@@ -544,7 +549,9 @@ async def update_limits_from_ws():
                 }))
 
                 await websocket.send(json.dumps({"get_settings": 1}))
-
+                # ⏳ Bind Watchdog starten
+                asyncio.create_task(bind_watchdog())
+                
                 while True:
                     msg = await websocket.recv()
                     data = json.loads(msg)
@@ -712,6 +719,22 @@ async def update_limits_from_ws():
             panda_ws = None
             await asyncio.sleep(5)
 
+async def bind_watchdog():
+    global bind_confirmed, bind_warning_shown
+
+    await asyncio.sleep(10)
+
+    if not bind_confirmed and not bind_warning_shown:
+        log_event("⚠️ Bitte im Panda UI → Bind drücken!", force_console=True)
+
+        mqtt_client.publish(
+            f"{MQTT_TOPIC_PREFIX}/status",
+            "Bitte im Panda UI 'Bind' drücken",
+            retain=True
+        )
+
+        bind_warning_shown = True
+        
 # --- EMULATION ---
 async def handle_panda(reader, writer):
 
