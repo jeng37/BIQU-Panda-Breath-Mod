@@ -1,131 +1,335 @@
-![GitHub Views](https://komarev.com/ghpvc/?username=jeng37&repo=BIQU-Panda-Breath-Mod&style=flat-square)
+![GitHub Views](https://komarev.com/ghpvc/?username=jeng37&repo=BIQU-Panda-Breath-Mod&style=flat-square&label=Repository+Views&color=blue)
+
+# BIQU-Panda-Breath-Mod 🚀
+### Panda-Logic-Sync v1.9
 
 Intelligent control for the **BIQU Panda Breath** chamber heater.
+
+This script simulates a **Bambu Lab printer** on a host system (PC/Server) and enables fully synchronized, intelligent chamber heating based on **real-time Home Assistant temperature data**.
+
+---
+
+## ✨ Key Features (v1.9)
+
+- 🔥 **Immediate Heating in ALL Modes**  
+  No more “wait for bed temperature”. Chamber heating starts instantly when needed.
+
+- 🔐 **Lock / Unlock Safety System**  
+  Emergency stop with global lock protection.
+
+- ⚡ **Power Sync Fix**  
+  Eliminates ON → OFF bounce and UI reset issues.
+
+- 🧠 **Slicer Priority Mode**  
+  Automatically reads `M191` / `M141` from G-code via Moonraker.
+
+- 🔄 **Bidirectional MQTT Sync**  
+  Full Home Assistant integration with auto-discovery.
+
+- 🎛 **Dry Mode Support**
+
+- 📊 **Live Terminal Monitor (flicker-free)**
+
+- 🔒 **TLS Secure Connection (Port 8883)**
+
+---
+
+# 🛠 How It Works
+
+The script emulates a **Bambu-compatible printer** using the native Panda WebSocket protocol.
+
+Data flow:
+
+![GitHub Views](https://komarev.com/ghpvc/?username=jeng37&repo=BIQU-Panda-Breath-Mod&style=flat-square&label=Repository+Views&color=blue)
+
 # BIQU-Panda-Breath-Mod 🚀
+### Panda-Logic-Sync v1.9
 
-Intelligent control for the **BIQU Panda Breath** chamber heater.  
-This script simulates a **Bambu Lab printer** on a host system (PC/Server), allowing the heater to be controlled based on **real-time temperature data from Home Assistant**.
+Intelligent control for the **BIQU Panda Breath** chamber heater.
 
----
-
-## ✨ Key Features
-
-- **Universal Auto-Function** Unlocks the intelligent automatic mode of the Panda Breath for **any printer model** (Voron, Creality, Anycubic, etc.).  
-  *Requirement:* The printer must be integrated into Home Assistant (e.g., via the [Moonraker Home Assistant Integration](https://github.com/marcolivierarsenault/moonraker-home-assistant)) – this script acts as the protocol translator.
-
-- **Bidirectional MQTT Sync** Full control via Home Assistant.  
-  Values are kept in sync between:
-  - Home Assistant  
-  - *(HA → Panda and Panda → HA)*
-
-- **Intelligent Hysteresis** Precise control with a configurable switching threshold to prevent excessive hardware cycling.
-
-- **Safety Cutoff** Automatic heating stop based on bed temperature  
-  (End-of-print detection via Home Assistant sensor).
-
-- **Live Monitor** Highly optimized **single-line terminal display** including an ANSI cursor fix for maximum clarity **without flickering**.
+This script simulates a **Bambu Lab printer** on a host system (PC/Server) and enables fully synchronized, intelligent chamber heating based on **real-time Home Assistant temperature data**.
 
 ---
 
-## 🛠️ How it Works & Slicer Support
+## ✨ Key Features (v1.9)
 
-The mod utilizes the **Bambu Lab protocol** to spoof compatible hardware for the Panda ecosystem. This allows the Panda Breath to accept external temperature data as "internal" values and utilize its **native automation logic**.
+- 🔥 **Immediate Heating in ALL Modes**  
+  No more “wait for bed temperature”. Chamber heating starts instantly when needed.
 
-### OrcaSlicer Integration
-In **OrcaSlicer**, you can enable the chamber temperature under filament settings (`Filament`). The script scans the G-code header via the Moonraker API and automatically sets the value (e.g., 42°C) as the `Chamber Target`.
+- 🔐 **Lock / Unlock Safety System**  
+  Emergency stop with global lock protection.
 
-<img width="931" height="781" alt="Screenshot from 2026-02-19 07-12-31" src="https://github.com/user-attachments/assets/bb5a8699-3e3f-45b9-a11f-f408459e9dbf" />
+- ⚡ **Power Sync Fix**  
+  Eliminates ON → OFF bounce and UI reset issues.
+
+- 🧠 **Slicer Priority Mode**  
+  Automatically reads `M191` / `M141` from G-code via Moonraker.
+
+- 🔄 **Bidirectional MQTT Sync**  
+  Full Home Assistant integration with auto-discovery.
+
+- 🎛 **Dry Mode Support**
+
+- 📊 **Live Terminal Monitor (flicker-free)**
+
+- 🔒 **TLS Secure Connection (Port 8883)**
 
 ---
 
-## 🚀 Installation & Setup
+# 🛠 How It Works
 
-### 1. Prepare the System
+The script emulates a **Bambu-compatible printer** using the native Panda WebSocket protocol.
 
-The host system (Server or PC) must be in the **same network** as the Panda Breath.
+Data flow:
+![GitHub Views](https://komarev.com/ghpvc/?username=jeng37&repo=BIQU-Panda-Breath-Mod&style=flat-square&label=Repository+Views&color=blue)
+
+# BIQU-Panda-Breath-Mod 🚀
+### Panda-Logic-Sync v1.9
+
+Intelligent control for the **BIQU Panda Breath** chamber heater.
+
+This script simulates a **Bambu Lab printer** on a host system (PC/Server) and enables fully synchronized, intelligent chamber heating based on **real-time Home Assistant temperature data**.
+
+---
+
+## ✨ Key Features (v1.9)
+
+- 🔥 **Immediate Heating in ALL Modes**  
+  No more “wait for bed temperature”. Chamber heating starts instantly when needed.
+
+- 🔐 **Lock / Unlock Safety System**  
+  Emergency stop with global lock protection.
+
+- ⚡ **Power Sync Fix**  
+  Eliminates ON → OFF bounce and UI reset issues.
+
+- 🧠 **Slicer Priority Mode**  
+  Automatically reads `M191` / `M141` from G-code via Moonraker.
+
+- 🔄 **Bidirectional MQTT Sync**  
+  Full Home Assistant integration with auto-discovery.
+
+- 🎛 **Dry Mode Support**
+
+- 📊 **Live Terminal Monitor (flicker-free)**
+
+- 🔒 **TLS Secure Connection (Port 8883)**
+
+---
+
+# 🛠 How It Works
+
+The script emulates a **Bambu-compatible printer** using the native Panda WebSocket protocol.
+
+Data flow:
+Moonraker → Home Assistant → Panda-Logic-Sync → Panda Touch
+
+
+The Panda Breath believes it is connected to a real printer and therefore enables its internal automation logic.
+
+---
+
+# 🧠 Heating Logic (v1.9)
+
+## Immediate Heating
+
+In ALL modes:
+
+- Auto  
+- Manual  
+- Slicer  
+- Dry  
+
+Heating starts immediately when:
+Chamber Temp < Target - Hysteresis
+
+
+❌ No bed wait  
+❌ No start blocker  
+
+---
+
+## Bed Temperature Logic
+
+Bed temperature is now used only for:
+
+- Safety limit
+- Filter fan activation
+
+If:
+Bed ≥ Bed Limit
+Status will show:
+
+Bed Limit reached
+
+
+But chamber control remains active.
+
+---
+
+# 🔐 Lock System
+
+Button: **Heizung Stop**
+
+Activates GLOBAL LOCK:
+
+- work_on = 0  
+- work_mode = 0  
+- set_temp = 0  
+- MQTT commands ignored  
+
+Unlock only possible via:
+Unlock Button
+
+---
+
+# ⚡ Power System
+
+Switch:
+switch.panda_breath_mod_panda_power
+
+
+Fixes:
+
+- No UI bounce
+- No WebSocket feedback loop
+- Stable power sync
+
+---
+
+# 🧩 Slicer Integration (OrcaSlicer)
+
+Enable chamber temperature in filament settings.
+
+The script scans the G-code header via Moonraker:
+M191 S42
+M141 S42
+
+Automatically sets "ORCAs" detected value as Chamber Target when:
+Slicer Priority Mode = ON
+
+---
+
+# 📦 Installation
+
+## 1️⃣ Clone Repository
 
 ```bash
-
-# Clone the repository
-git clone [https://github.com/jeng37/BIQU-Panda-Breath-Mod.git](https://github.com/jeng37/BIQU-Panda-Breath-Mod.git)
+git clone https://github.com/jeng37/BIQU-Panda-Breath-Mod.git
 cd BIQU-Panda-Breath-Mod
 
-# Install dependencies
-pip install -r requirements.txt
+2️⃣ Install Dependencies
 
-# Generate SSL certificates (essential for the encrypted connection)
+sudo apt update
+sudo apt install python3-pip -y
+pip install asyncio websockets requests paho-mqtt
+
+3️⃣ Generate SSL Certificates
+Required for Panda connection:
+
 chmod +x cert_gen.sh
 ./cert_gen.sh
-2. Konfiguration
 
-Öffne die Datei Panda.py und passe die Konfigurationssektion an.
-Alle Parameter sind im Skript selbst ausführlich dokumentiert.
+Or manually:
+openssl req -x509 -newkey rsa:4096 \
+-keyout key.pem \
+-out cert.pem \
+-sha256 -days 3650 -nodes \
+-subj "/C=DE/ST=Panda/L=Panda/O=Bambu/OU=Printer/CN=bambulab.local"
 
-Benötigte Angaben:
+⚙ Configuration
+Edit:
+
+nano Panda.py
+
+Configure:
 
 MQTT
-Broker-IP
-Benutzername
-Passwort
-Panda Breath Hardware
-Panda-IP
-Printer Serial Number (SN)
+Broker IP
+Username
+Password
+Panda Hardware
+Panda IP
+Printer SN
 Access Code
 Home Assistant
 Long-Lived Access Token
-Sensor-URL
-```bash
-nano Panda.py
-```
-2. Configuration
-Open the Panda.py file and adjust the configuration section. All parameters are extensively documented within the script itself.
+Sensor URL
 
-Required Information:
+▶ Start Script
 
-MQTT: Broker IP, Username, Password
-
-Panda Breath Hardware: Panda IP, Printer Serial Number (SN), Access Code
-
-Home Assistant: Long-Lived Access Token, Sensor URL
-
-Bash
-nano Panda.py
-Afterward, start the script (sudo is required for port 8883):
-
-Bash
 sudo python3 Panda.py
-3. Establish Connection (Binding)
-Open the Panda Web UI in your browser:
+(Port 8883 requires root)
 
+🔗 Binding Process
+Open Panda Web UI:
 http://<PANDA_IP>
 
-Enter the following manually:
+Enter:
 
 Printer SN
-
 Access Code
+Printer IP → HOST_IP
 
-Printer IP → The IP of your host system
+⚠ Do NOT use Scan
+Click Bind directly.
 
-<img width="1864" height="932" alt="image" src="https://github.com/user-attachments/assets/cb2b26c5-3f24-4ba3-904a-0a7f5e6e76ac" />
+When it changes to Unbind, connection is active.
 
-⚠️ Important: Do not click "Scan" – the printer simulator will not be found via scanning. Click Bind directly.
+📊 Live Terminal Monitor
+Example:
+🟢 READY | Bed:61° | Kammer:50/43° | Heiz:AN | Fan:ON | Heizen... | NORMAL:0°
+Field	Meaning
+Bed	Bed temperature
+Kammer	Target / Current
+Heiz	Relay state
+Fan	Filter fan
+NORMAL / SL-PRIO	Slicer mode
 
-Once the button changes to "Unbind", the connection is active and the Panda Breath will use the external values.
+🏠 Home Assistant Entities (Auto-Discovery)
+Numbers
 
-📊 Dashboard & Monitoring
-Home Assistant Dashboard (Example)
-<img width="1835" height="836" alt="image" src="https://github.com/user-attachments/assets/1b1b7d8a-9fc1-4e6f-ab15-3ba944f3f9ea" />
-<img width="510" height="617" alt="image" src="https://github.com/user-attachments/assets/11cb85bf-6958-4620-b237-6a130bea637a" />
-<img width="1519" height="790" alt="image" src="https://github.com/user-attachments/assets/450b3fa4-51ad-4219-89e7-ff3abf4ad2d8" />
-<img width="1511" height="606" alt="image" src="https://github.com/user-attachments/assets/9265ca56-cee2-455b-b43a-f306706e9709" />
+Kammer Soll
+Bett Limit
+Filter Temp
+Dry Temp
+Dry Time
 
-Live Terminal Monitor
-Thanks to optimized cursor handling, the display is smooth and flicker-free:
+Switches
 
-<img width="1467" height="264" alt="image" src="https://github.com/user-attachments/assets/020dd9ee-66c3-40db-b827-0f8574147a4b" />
+Panda Power
+Slicer Priority Mode
 
-📝 License & Disclaimer
-This project is licensed under the MIT License.
+Buttons
 
-Disclaimer: Use at your own risk. Always pay attention to the applicable fire safety regulations for your 3D printer and your local environment.
+Auto
+Manual
+Drying
+Heizung Stop
+Unlock
+
+Sensors
+
+Kammer Ist
+Slicer Soll
+Slicer Target Temp
+Panda Status
+Panda Modus
+Lock Status
+Version
+
+🛡 Safety Behaviour
+Situation	Result
+HA sensor failure	Heating OFF
+Lock active	Everything OFF
+Work mode 0	Standby
+Panda Power OFF	Hard shutdown
+
+📝 License
+
+MIT License
+
+⚠ Disclaimer
+
+Use at your own risk.
+Always follow fire safety regulations when operating heating devices in 3D printer enclosures.
