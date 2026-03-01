@@ -7,7 +7,12 @@ Intelligent control for the **BIQU Panda Breath** chamber heater.
 
 This script simulates a **Bambu Lab printer** on a host system (PC/Server) and enables fully synchronized, intelligent chamber heating based on **real-time Home Assistant temperature data**.
 
----
+<img width="1839" height="912" alt="Screenshot from 2026-03-01 10-36-31" src="https://github.com/user-attachments/assets/50aab4bf-ccf9-4eea-8567-7ef40c84fd36" />
+
+<img width="1329" height="897" alt="Screenshot from 2026-03-01 10-37-42" src="https://github.com/user-attachments/assets/89309991-4a4c-4611-bd0c-f5e7c97c90c9" />
+<img width="1329" height="897" alt="Screenshot from 2026-03-01 10-37-47" src="https://github.com/user-attachments/assets/e15c096e-c885-4e7c-b7a1-fb6e755795f8" />
+
+<img width="526" height="780" alt="Screenshot from 2026-03-01 10-35-56" src="https://github.com/user-attachments/assets/cb2ca112-8e07-41d9-a7cc-d286a7d684fa" />
 
 ## ✨ Key Features (v1.9)
 
