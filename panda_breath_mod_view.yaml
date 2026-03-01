@@ -1,105 +1,261 @@
-title: Panda Breath Mod
-path: panda-breath-mod
-type: sections
-max_columns: 3
-
-sections:
-  - type: grid
+type: grid
+cards:
+  - type: heading
+    heading: Panda Breath Mod
+  - type: horizontal-stack
     cards:
-      - type: heading
-        heading: Panda Breath Mod
+      - type: custom:mushroom-template-card
+        primary: Auto
+        icon: mdi:cog-sync
+        icon_color: |
+          {% if states('sensor.panda_breath_mod_panda_modus') == 'Automatik' %}
+            green
+          {% else %}
+            grey
+          {% endif %}
+        layout: vertical
+        tap_action:
+          action: call-service
+          service: mqtt.publish
+          data:
+            topic: panda_breath_mod/auto/set
+            payload: "1"
+      - type: custom:mushroom-template-card
+        primary: Manuell
+        icon: mdi:hand-back-right
+        icon_color: |
+          {% if states('sensor.panda_breath_mod_panda_modus') == 'Manuell' %}
+            green
+          {% else %}
+            grey
+          {% endif %}
+        layout: vertical
+        tap_action:
+          action: call-service
+          service: mqtt.publish
+          data:
+            topic: panda_breath_mod/manual/set
+            payload: PRESS
+      - type: custom:mushroom-template-card
+        primary: Dry
+        icon: mdi:waves
+        icon_color: |
+          {% if states('sensor.panda_breath_mod_panda_modus') == 'Dry' %}
+            green
+          {% else %}
+            grey
+          {% endif %}
+        layout: vertical
+        tap_action:
+          action: call-service
+          service: mqtt.publish
+          data:
+            topic: panda_breath_mod/drying/set
+            payload: "1"
+  - type: custom:mushroom-template-card
+    primary: >
+      {% set s = states('sensor.panda_breath_mod_panda_heiz_status') %} {% set m
+      = states('sensor.panda_breath_mod_panda_modus') %}
 
-      # === MODUS BUTTONS ===
-      - type: horizontal-stack
-        cards:
-          - type: tile
-            entity: button.panda_breath_mod_auto
-            name: Auto
-            icon: mdi:cog-sync
+      {% if is_state('switch.panda_breath_mod_panda_power', 'off') %}
+        System Aus
 
-          - type: tile
-            entity: button.panda_breath_mod_manual
-            name: Manuell
-            icon: mdi:hand-back-right
+      {% elif s == 'Hysterese' %}
+        Hysterese (Halten)
 
-          - type: tile
-            entity: button.panda_breath_mod_drying
-            name: Dry
-            icon: mdi:waves
+      {% elif s == 'Bett-Stop' %}
+        Warte auf Bett
 
-      # === STATUS ===
-      - type: tile
-        entity: sensor.panda_breath_mod_panda_heiz_status
-        name: Warte auf Bett
-        icon: mdi:timer-sand
+      {% elif s == 'Heizen...' %}
+        Heizung aktiv
 
-      # === TEMPERATUREN ===
-      - type: tile
-        entity: number.panda_breath_mod_limit
-        name: Bett Limit
-        icon: mdi:thermometer-alert
+      {% elif m == 'Manuell' and s == 'Ziel erreicht' %}
+        Manuell - Ziel erreicht
 
-      - type: tile
-        entity: sensor.ks1c_bed_temp_unified
-        name: KS1C Bed Temp
-        icon: mdi:thermometer
+      {% elif m == 'Automatik' and s == 'Ziel erreicht' %}
+        Fertig
 
-      - type: tile
-        entity: number.panda_breath_mod_soll
-        name: Kammer Soll
-        icon: mdi:thermometer-plus
+      {% elif s == 'Ziel erreicht' %}
+        Fertig
 
-      - type: tile
-        entity: sensor.panda_breath_mod_kammer_ist
-        name: Kammer Ist
-        icon: mdi:thermometer
+      {% elif m == 'Manuell' %}
+        Manuell
 
-      # === FILTER & DRYER ===
-      - type: tile
-        entity: number.panda_breath_mod_filtertemp
-        name: Filter Fan Start
-        icon: mdi:fan
-
-      - type: tile
-        entity: button.panda_breath_mod_drying
-        name: Panda Dryer
-        icon: mdi:hair-dryer
-
-      - type: tile
-        entity: number.panda_breath_mod_dry_temp
-        name: Dryer Temp
-        icon: mdi:thermometer
-
-      - type: tile
-        entity: number.panda_breath_mod_dry_time
-        name: Dryer Time
-        icon: mdi:timer
-
-      # === SLICER ===
-      - type: tile
-        entity: switch.panda_breath_mod_slicer_priority_mode
-        name: Slicer Mode
-        icon: mdi:priority-high
-
-      - type: tile
-        entity: sensor.panda_breath_mod_slicer_target_temp
-        name: Slicer Target Temp
-        icon: mdi:temperature-celsius
-
-      # === STOP / POWER ===
-      - type: tile
-        entity: button.panda_breath_mod_heizung_stop
-        name: Stop Heizen
-        icon: mdi:radiator-off
-        color: red
-
-      - type: tile
-        entity: switch.panda_breath_mod_panda_power
-        name: Panda Power
-        icon: mdi:power
-
-      # === VERSION ===
-      - type: tile
-        entity: sensor.panda_breath_mod_version
-        name: Version
-        icon: mdi:information-outline
+      {% else %}
+        {{ s }}
+      {% endif %}
+    icon: >
+      {% set s = states('sensor.panda_breath_mod_panda_heiz_status') %} {% set m
+      = states('sensor.panda_breath_mod_panda_modus') %} {% if
+      is_state('switch.panda_breath_mod_panda_power', 'off') %}
+        mdi:power-off
+      {% elif m == 'Manuell' %}
+        mdi:hand-pointing-up
+      {% elif s == 'Heizen...' %}
+        mdi:fire
+      {% elif m == 'Automatik' and s == 'Ziel erreicht' %}
+        mdi:check-circle
+      {% elif s in ['Hysterese', 'Ziel erreicht'] %}
+        mdi:thermometer-check
+      {% elif s == 'Bett-Stop' %}
+        mdi:timer-sand
+      {% else %}
+        mdi:power-sleep
+      {% endif %}
+    color: >
+      {% set s = states('sensor.panda_breath_mod_panda_heiz_status') %} {% if s
+      == 'Heizen...' %}
+        red
+      {% elif s == 'Ziel erreicht' %}
+        orange
+      {% elif s == 'Hysterese' %}
+        green
+      {% else %}
+        grey
+      {% endif %}
+    tap_action:
+      action: none
+    grid_options:
+      columns: 6
+      rows: 1
+    features_position: bottom
+  - type: tile
+    entity: sensor.panda_breath_mod_version
+    name: Version
+    show_entity_picture: true
+    vertical: false
+    tap_action:
+      action: none
+    icon_tap_action:
+      action: none
+    features_position: bottom
+  - type: tile
+    grid_options:
+      columns: 6
+      rows: 1
+    entity: number.panda_breath_mod_bett_limit
+    name: Bett Limit
+    show_entity_picture: true
+    vertical: false
+    features_position: bottom
+  - type: tile
+    entity: sensor.ks1c_bed_temp_unified
+    name: KS1C Bed Temp
+    show_entity_picture: true
+    vertical: false
+    features_position: bottom
+  - type: tile
+    grid_options:
+      columns: 6
+      rows: 1
+    entity: number.panda_breath_mod_kammer_soll
+    name: Kammer Soll
+    show_entity_picture: true
+    vertical: false
+    features_position: bottom
+  - type: tile
+    grid_options:
+      columns: 6
+      rows: 1
+    entity: sensor.panda_breath_mod_kammer_ist
+    name: Kammer Ist
+    show_entity_picture: true
+    vertical: false
+    features_position: bottom
+  - type: tile
+    entity: number.panda_breath_mod_filter_fan_activation
+    name: Filter Fan Start
+    show_entity_picture: true
+    hide_state: false
+    vertical: false
+    features_position: bottom
+  - type: tile
+    entity: button.panda_breath_mod_panda_drying
+    name: Panda Dryer
+    show_entity_picture: true
+    vertical: false
+    features_position: bottom
+  - type: tile
+    entity: number.panda_breath_mod_drying_temp
+    name: Dryer Temp
+    show_entity_picture: true
+    vertical: false
+    features_position: bottom
+  - type: tile
+    entity: number.panda_breath_mod_drying_time
+    name: Dryer Time
+    vertical: false
+    features_position: bottom
+  - type: tile
+    entity: switch.panda_breath_mod_slicer_priority_mode
+    name: Slicer Mode
+    show_entity_picture: true
+    vertical: false
+    features_position: bottom
+  - type: tile
+    entity: sensor.panda_breath_mod_slicer_target_temp
+    name: Slicer Target Temp
+    icon: mdi:temperature-celsius
+    show_entity_picture: true
+    vertical: false
+    features_position: bottom
+  - type: conditional
+    conditions:
+      - entity: switch.panda_breath_mod_panda_power
+        state: "on"
+    card:
+      type: tile
+      entity: button.panda_breath_mod_heizung_stop
+      name: Stop Heizen
+      color: red
+      vertical: false
+      tap_action:
+        action: press
+    grid_options:
+      columns: 6
+      rows: auto
+  - type: custom:mushroom-template-card
+    entity: sensor.panda_breath_mod_panda_lock_status
+    primary: Lock Status
+    secondary: "{{ states('sensor.panda_breath_mod_panda_lock_status') }}"
+    layout: horizontal
+    fill_container: true
+    icon: |
+      {% if is_state('sensor.panda_breath_mod_panda_lock_status', 'LOCKED') %}
+        mdi:lock
+      {% else %}
+        mdi:lock-open
+      {% endif %}
+    icon_color: |
+      {% if is_state('sensor.panda_breath_mod_panda_lock_status', 'LOCKED') %}
+        red
+      {% else %}
+        green
+      {% endif %}
+  - type: custom:mushroom-template-card
+    entity: button.panda_breath_mod_panda_unlock
+    primary: Unlock
+    icon: |
+      {% if is_state('sensor.panda_breath_mod_panda_lock_status', 'LOCKED') %}
+        mdi:lock-open-variant
+      {% else %}
+        mdi:lock-open
+      {% endif %}
+    tap_action:
+      action: call-service
+      service: button.press
+      target:
+        entity_id: button.panda_breath_mod_panda_unlock
+    color: |
+      {% if is_state('sensor.panda_breath_mod_panda_lock_status', 'LOCKED') %}
+        green
+      {% else %}
+        red
+      {% endif %}
+    features_position: bottom
+  - type: tile
+    entity: switch.panda_breath_mod_panda_power
+    name: Panda Power
+    show_entity_picture: true
+    vertical: false
+    features_position: bottom
