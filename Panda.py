@@ -14,7 +14,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 # - Entfernt NICHTS: Original bleibt, Erweiterungen sind additiv/ersetzend innerhalb
 #   der bestehenden Struktur (nur ergänzt/erweitert).
 # ============================================================
-PANDA_VERSION = "v1.8"
+PANDA_VERSION = "v1.9"
 last_reported_mode = None
 mode_change_hint = ""
 heating_locked = False
@@ -65,7 +65,7 @@ ACCESS_CODE = "01P00A12"
 # HA API URL: Link zum Bett-Temperatur-Sensor deines Druckers in Home Assistant.
 HA_URL = "http://192.168.x.xxx:8123/api/states/sensor.ks1c_bed_temperature"
 # HA Token: Ein 'Long-Lived Access Token' (erstellt im HA-Profil ganz unten).
-HA_TOKEN = "eyJhbGciOiJIUzI1NiI..........................................."
+HA_TOKEN = "eyJhbGciOiJIUzI1Ni............................................"
 
 # ============================================================
 # ✅ SLICER MODE (NEU)
@@ -923,10 +923,9 @@ async def handle_panda(reader, writer):
                         # 🔥 AUTO / MANUELL
                         # =====================================
                         else:
-                            if work_mode == 1 and bed_ist < limit:
-                                target_state, info = 20.0, "Warte auf Bett"
 
-                            elif ist < (target - HYSTERESE):
+                            # 🔥 Sofort heizen wenn Kammer unter Soll
+                            if ist < (target - HYSTERESE):
                                 target_state, info = 85.0, "Heizen..."
 
                             elif ist >= target:
@@ -934,6 +933,10 @@ async def handle_panda(reader, writer):
 
                             else:
                                 info = "Hysterese"
+
+                            # 🛑 Bett nur als Info / Sicherheitsbedingung
+                            if bed_ist >= limit and work_mode == 1:
+                                info = "Bett Limit erreicht"
 
                     # ========================================================
                     # ⏱ SWITCH-TIMER LOGIK
