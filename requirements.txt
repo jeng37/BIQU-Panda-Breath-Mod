@@ -1,4 +1,4 @@
 websockets
 requests
 asyncio
-
+paho-mqtt
