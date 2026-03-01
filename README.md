@@ -44,47 +44,6 @@ This script simulates a **Bambu Lab printer** on a host system (PC/Server) and e
 The script emulates a **Bambu-compatible printer** using the native Panda WebSocket protocol.
 
 Data flow:
-![GitHub Views](https://komarev.com/ghpvc/?username=jeng37&repo=BIQU-Panda-Breath-Mod&style=flat-square&label=Repository+Views&color=blue)
-
-# BIQU-Panda-Breath-Mod 🚀
-### Panda-Logic-Sync v1.9
-
-Intelligent control for the **BIQU Panda Breath** chamber heater.
-
-This script simulates a **Bambu Lab printer** on a host system (PC/Server) and enables fully synchronized, intelligent chamber heating based on **real-time Home Assistant temperature data**.
-
----
-
-## ✨ Key Features (v1.9)
-
-- 🔥 **Immediate Heating in ALL Modes**  
-  No more “wait for bed temperature”. Chamber heating starts instantly when needed.
-
-- 🔐 **Lock / Unlock Safety System**  
-  Emergency stop with global lock protection.
-
-- ⚡ **Power Sync Fix**  
-  Eliminates ON → OFF bounce and UI reset issues.
-
-- 🧠 **Slicer Priority Mode**  
-  Automatically reads `M191` / `M141` from G-code via Moonraker.
-
-- 🔄 **Bidirectional MQTT Sync**  
-  Full Home Assistant integration with auto-discovery.
-
-- 🎛 **Dry Mode Support**
-
-- 📊 **Live Terminal Monitor (flicker-free)**
-
-- 🔒 **TLS Secure Connection (Port 8883)**
-
----
-
-# 🛠 How It Works
-
-The script emulates a **Bambu-compatible printer** using the native Panda WebSocket protocol.
-
-Data flow:
 Moonraker → Home Assistant → Panda-Logic-Sync → Panda Touch
 
 
