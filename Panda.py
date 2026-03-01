@@ -562,13 +562,20 @@ async def update_limits_from_ws():
                     # Nur verarbeiten wenn settings enthalten
                     if 'settings' in data:
 
+                        # ✅ Bind bestätigt
+                        if not bind_confirmed:
+                            bind_confirmed = True
+                            bind_warning_shown = False
+
                         incoming_settings = data['settings']
                         last_ws_settings.update(incoming_settings)
                         s = last_ws_settings
 
                         # Ist-Temperatur
                         if 'warehouse_temper' in incoming_settings:
-                            current_data["kammer_ist"] = float(incoming_settings['warehouse_temper'])
+                            current_data["kammer_ist"] = float(
+                                incoming_settings['warehouse_temper']
+                            )
                             mqtt_client.publish(
                                 f"{MQTT_TOPIC_PREFIX}/ist",
                                 incoming_settings['warehouse_temper']
