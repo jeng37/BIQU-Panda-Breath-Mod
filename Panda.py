@@ -212,10 +212,16 @@ async def slicer_auto_parser():
 
 # --- MQTT LOGIK ---
 def on_mqtt_message(client, userdata, msg):
-    # ✅ FIX: Alle globalen Deklarationen MÜSSEN am Anfang der Funktion stehen
-    global current_data, last_ha_change, ha_memory
-    global heating_locked, power_forced_off, global_lock 
-
+    # ✅ FIX: Alle globalen Deklarationen MÜSSEN am Anfang der Funktion stehen 
+    global current_data
+    global last_ha_change
+    global ha_memory
+    global heating_locked
+    global power_forced_off
+    global global_lock
+    global desired_power_state
+    global power_pending_until
+    global global_heating_state
     # ============================================================
     # ✅ UNLOCK LOGIK (Muss VOR dem Lock-Check kommen!)
     # ------------------------------------------------------------
@@ -238,13 +244,54 @@ def on_mqtt_message(client, userdata, msg):
             return
 
     # ✅ FEHLENDE ENTITÄT 1: switch.panda_breath_mod_slicer_priority_mode
+    # ============================================================
+    # ✅ SLICER PRIORITY MODE
+    # ============================================================
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode/set":
+
         payload = msg.payload.decode().strip().lower()
         is_on = payload in ("on", "1", "true")
         current_data["slicer_priority_mode"] = is_on
+
         log_event(">>> SLICER MODE ENTERED <<<", force_console=True)
-        mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode", "ON" if is_on else "OFF", retain=True)
+
+        mqtt_client.publish(
+            f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode",
+            "ON" if is_on else "OFF",
+            retain=True
+        )
+
+        if is_on:
+            slicer_val = float(current_data.get("slicer_soll", 0))
+
+            if slicer_val > 15:
+                current_data["kammer_soll"] = slicer_val
+
+            if panda_ws:
+                asyncio.run_coroutine_threadsafe(
+                    panda_ws.send(json.dumps({
+                        "settings": {
+                            "set_temp": int(slicer_val),
+                            "work_on": 1,
+                            "isrunning": 1
+                        }
+                    })),
+                    main_loop
+                )
+
+                mqtt_client.publish(
+                    f"{MQTT_TOPIC_PREFIX}/soll",
+                    int(slicer_val),
+                    retain=True
+                )
+
+                log_event(
+                    f"[SLICER] Kammer Soll sofort gesetzt auf {slicer_val}°",
+                    force_console=True
+                )
+
         return
+
 
     # ============================================================
     # ✅ HEIZUNG STOP (NOT-AUS MIT LOCK) - VERBESSERT
@@ -350,7 +397,7 @@ def on_mqtt_message(client, userdata, msg):
         
     # PANDA POWER SWITCH
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/panda_power/set":
-        global desired_power_state, power_pending_until
+ 
 
         payload = msg.payload.decode().strip().upper()
         is_on = payload == "ON"
