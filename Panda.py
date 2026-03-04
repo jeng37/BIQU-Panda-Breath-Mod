@@ -971,19 +971,27 @@ async def handle_panda(reader, writer):
                         # =====================================
                         else:
 
-                            # 🔥 Sofort heizen wenn Kammer unter Soll
+                            # 🖨️ Druck erkannt (Bett deutlich über Limit)
+                            printing = bed_ist > (limit + 5)
+
+                            # 🏁 Druck fertig (Bett unter Limit)
+                            finished = bed_ist < limit
+
+                            # 🔥 Heizen wenn Kammer zu kalt
                             if ist < (target - HYSTERESE):
                                 target_state, info = 85.0, "Heizen..."
 
+                            # 🎯 Ziel erreicht
                             elif ist >= target:
                                 target_state, info = 20.0, "Ziel erreicht"
 
+                            # 🔄 Hysterese Bereich
                             else:
                                 info = "Hysterese"
 
-                            # 🛑 Bett nur als Info / Sicherheitsbedingung
-                            if bed_ist >= limit and work_mode == 1:
-                                info = "Bett Limit erreicht"
+                            # 🛑 Druck fertig → Heizung aus
+                            if work_mode == 1 and finished:
+                                target_state, info = 20.0, "Fertig"
 
                     # ========================================================
                     # ⏱ SWITCH-TIMER LOGIK
