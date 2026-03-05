@@ -1,7 +1,7 @@
 ![GitHub Views](https://komarev.com/ghpvc/?username=jeng37&repo=BIQU-Panda-Breath-Mod&style=flat-square&label=Repository+Views&color=blue)
 
 # BIQU-Panda-Breath-Mod 🚀
-### Panda-Logic-Sync v1.9
+### Panda-Logic-Sync v1.9.1 Bug Fixes.
 
 Intelligent control for the **BIQU Panda Breath** chamber heater.
 
