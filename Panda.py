@@ -14,7 +14,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 # - Entfernt NICHTS: Original bleibt, Erweiterungen sind additiv/ersetzend innerhalb
 #   der bestehenden Struktur (nur ergänzt/erweitert).
 # ============================================================
-PANDA_VERSION = "v1.9"
+PANDA_VERSION = "v1.9.1"
 last_reported_mode = None
 mode_change_hint = ""
 heating_locked = False
@@ -25,9 +25,9 @@ bed_sensor_error = False
 bind_confirmed = False
 bind_warning_shown = False
 # --- POWER CONFIRM (gegen ON->OFF "Bounce") ---
-desired_power_state = None           # None / True / False
+desired_power_state = None # None / True / False
 power_pending_until = 0.0
-POWER_CONFIRM_TIMEOUT = 6.0          # Sekunden warten, bis WS "work_on" nachzieht
+POWER_CONFIRM_TIMEOUT = 6.0 # Sekunden warten, bis WS "work_on" nachzieht
 # ==========================================
 # KONFIGURATION - BITTE HIER ANPASSEN
 # ==========================================
@@ -41,13 +41,12 @@ HYSTERESE = 1.5
 MIN_SWITCH_TIME = 10
 # MQTT Broker Adresse: Die IP-Adresse deines Home Assistant oder MQTT-Servers.
 MQTT_BROKER = "192.168.x.xxx"
-# MQTT Benutzername: In HA unter Einstellungen -> Personen -> Benutzer angelegt.
+# MQTT Benutzername: In HA oder anderer Broker.
 MQTT_USER = "xxxxxx"
 # MQTT Passwort: Das zugehörige Passwort für den MQTT-Benutzer.
 MQTT_PASS = "xxxxxx"
 
 # MQTT Präfix: Die Basis für alle Topics (z.B. panda_breath_mod/soll).
-# ⚠️ WICHTIG: Deine Screenshots zeigen entity_ids wie:
 # - button.panda_breath_mod_heizung_stop
 # - switch.panda_breath_mod_slicer_priority_mode
 # - sensor.panda_breath_mod_slicer_target_temp
@@ -56,11 +55,11 @@ MQTT_TOPIC_PREFIX = "panda_breath_mod"
 
 # Host IP: Die statische IP-Adresse des Rechners, auf dem dieses Skript läuft.
 HOST_IP = "192.168.x.xxx"
-# Panda IP: Die IP-Adresse deines Panda Touch Displays im WLAN.
+# Panda IP: Die IP-Adresse deine Heuzung im WLAN.
 PANDA_IP = "192.168.x.xxx"
-# Seriennummer: Die SN deines Druckers (findest du in der Panda-UI oder auf dem Sticker).
+# Seriennummer: Die SN deines Druckers (ist Fake, nicht anfassen wird vom Emulator gebraucht!).
 PRINTER_SN = "01P00A123456789"
-# Access Code: Der Sicherheitscode deines Druckers für die WebSocket-Verbindung.
+# Access Code: Der Sicherheitscode deines Druckers für die WebSocket-Verbindung. (Auch nicht anfassen!)
 ACCESS_CODE = "01P00A12"
 # HA API URL: Link zum Bett-Temperatur-Sensor deines Druckers in Home Assistant.
 HA_URL = "http://192.168.x.xxx:8123/api/states/sensor.ks1c_bed_temperature"
@@ -1004,7 +1003,10 @@ async def handle_panda(reader, writer):
 
                     elif (
                         target_state != global_heating_state
-                        and time_passed > MIN_SWITCH_TIME
+                        and (
+                            current_data.get("slicer_priority_mode", False)
+                            or time_passed > MIN_SWITCH_TIME
+                        )    
                     ):
                         global_heating_state = target_state
                         last_switch_time = time.time()
