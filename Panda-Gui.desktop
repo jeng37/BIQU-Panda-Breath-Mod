@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Panda-Gui v1.0
+Comment=Panda Control GUI
+Exec=/usr/bin/python3 ~/Panda/PandaGui.py
+Icon=~/Panda/panda_gui.png
+Terminal=false
+Categories=Utility;
+StartupWMClass=panda-gui
