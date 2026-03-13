@@ -1,4 +1,6 @@
-![GitHub Views](https://komarev.com/ghpvc/?username=jeng37&repo=BIQU-Panda-Breath-Mod&style=flat-square&label=Repository+Views&color=blue)
+<!-- REPO_VIEWS_BADGE_START -->
+![Repository Views](https://img.shields.io/badge/Repository%20Views-776-blue?style=flat-square)
+<!-- REPO_VIEWS_BADGE_END -->
 
 # BIQU Panda Breath Mod 🚀
 ### Panda Logic Sync v1.9.2
