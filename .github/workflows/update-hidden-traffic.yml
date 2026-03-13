@@ -1,0 +1,109 @@
+name: Update hidden repo traffic counter
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-traffic:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Update README badge from hidden variables
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFIC_ADMIN_TOKEN }}
+          OWNER: jeng37
+          REPO: BIQU-Panda-Breath-Mod
+          REPO_VIEWS_TOTAL: ${{ vars.REPO_VIEWS_TOTAL }}
+          REPO_VIEWS_LAST_API: ${{ vars.REPO_VIEWS_LAST_API }}
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          import re
+          import urllib.request
+
+          owner = os.environ["OWNER"]
+          repo = os.environ["REPO"]
+          token = os.environ["GH_TOKEN"]
+
+          total_views = int(os.environ.get("REPO_VIEWS_TOTAL", "776"))
+          last_api_count = int(os.environ.get("REPO_VIEWS_LAST_API", "0"))
+
+          traffic_url = f"https://api.github.com/repos/{owner}/{repo}/traffic/views"
+          req = urllib.request.Request(
+              traffic_url,
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "hidden-repo-traffic-counter"
+              }
+          )
+
+          with urllib.request.urlopen(req) as resp:
+              data = json.loads(resp.read().decode("utf-8"))
+
+          current_api_count = int(data.get("count", 0))
+          delta = current_api_count - last_api_count
+
+          if delta < 0:
+              delta = current_api_count
+
+          total_views += delta
+
+          def patch_variable(name, value):
+              url = f"https://api.github.com/repos/{owner}/{repo}/actions/variables/{name}"
+              body = json.dumps({"name": name, "value": str(value)}).encode("utf-8")
+              req = urllib.request.Request(
+                  url,
+                  data=body,
+                  method="PATCH",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "hidden-repo-traffic-counter",
+                      "Content-Type": "application/json"
+                  }
+              )
+              with urllib.request.urlopen(req) as resp:
+                  resp.read()
+
+          patch_variable("REPO_VIEWS_TOTAL", total_views)
+          patch_variable("REPO_VIEWS_LAST_API", current_api_count)
+
+          readme_path = "README.md"
+          with open(readme_path, "r", encoding="utf-8") as f:
+              readme = f.read()
+
+          badge = f"![Repository Views](https://img.shields.io/badge/Repository%20Views-{total_views}-blue?style=flat-square)"
+
+          pattern = r"<!-- REPO_VIEWS_BADGE_START -->.*?<!-- REPO_VIEWS_BADGE_END -->"
+          replacement = f"<!-- REPO_VIEWS_BADGE_START -->\n{badge}\n<!-- REPO_VIEWS_BADGE_END -->"
+
+          if re.search(pattern, readme, flags=re.S):
+              readme = re.sub(pattern, replacement, readme, flags=re.S)
+          else:
+              readme = replacement + "\n\n" + readme
+
+          with open(readme_path, "w", encoding="utf-8") as f:
+              f.write(readme)
+          PY
+
+      - name: Commit README update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --cached --quiet || git commit -m "Update repository views badge"
+
+      - name: Push README update
+        run: git push
