@@ -9,12 +9,13 @@ Intelligent control for the **BIQU Panda Breath** chamber heater.
 
 This project emulates a **Bambu Lab-compatible printer** on a host system and enables synchronized chamber heating control for the Panda ecosystem. It currently integrates with **Home Assistant** for parts of the state handling and automation flow, but the long-term goal is to make the project work with **MQTT only**.
 
-<img width="1839" height="912" alt="Screenshot from 2026-03-01 10-36-31" src="https://github.com/user-attachments/assets/50aab4bf-ccf9-4eea-8567-7ef40c84fd36" />
+![1](screenshots/1.png)
 
-<img width="1329" height="897" alt="Screenshot from 2026-03-01 10-37-42" src="https://github.com/user-attachments/assets/89309991-4a4c-4611-bd0c-f5e7c97c90c9" />
-<img width="1329" height="897" alt="Screenshot from 2026-03-01 10-37-47" src="https://github.com/user-attachments/assets/e15c096e-c885-4e7c-b7a1-fb6e755795f8" />
+![2](screenshots/2.png)
 
-<img width="526" height="780" alt="Screenshot from 2026-03-01 10-35-56" src="https://github.com/user-attachments/assets/cb2ca112-8e07-41d9-a7cc-d286a7d684fa" />
+![3](screenshots/3.png)
+
+![4](screenshots/4.png)
 
 ## Features
 
@@ -301,8 +302,9 @@ A desktop GUI for controlling and monitoring the **Panda Breath Mod** over **MQT
 
 It is written in **Python** using **PySide6** and provides a direct interface for status display, mode switching, and sending setpoints.
 
-<img width="1258" height="962" alt="Screenshot from 2026-03-12 11-20-16" src="https://github.com/user-attachments/assets/b7ac4fcc-2a2f-4dbd-beac-c5f8c6ad25ff" />
-<img width="1258" height="962" alt="Screenshot from 2026-03-12 11-21-00" src="https://github.com/user-attachments/assets/2d905b8f-01ef-41b2-9095-e95e2735425c" />
+![1](screenshots/gui-1.png)
+
+![2](screenshots/gui-2.png)
 
 ### GUI Features
 
