@@ -1,5 +1,5 @@
 <!-- REPO_VIEWS_BADGE_START -->
-![Repository Views](https://img.shields.io/badge/Repository%20Views-968-blue?style=flat-square)
+![Repository Views](https://img.shields.io/badge/Repository%20Views-1005-blue?style=flat-square)
 <!-- REPO_VIEWS_BADGE_END -->
 
 # BIQU Panda Breath Mod 🚀
@@ -199,7 +199,7 @@ Edit the main script and adjust the configuration to your own environment.
 Example:
 
 ```bash
-nano Panda.py
+nano panda_config.json
 ```
 
 Configure values such as:
