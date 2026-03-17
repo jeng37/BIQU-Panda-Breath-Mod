@@ -405,6 +405,9 @@ class PandaControlWindow(QMainWindow):
         self.lbl_power = ValueLabel("Panda Power", "-")
         self.lbl_version = ValueLabel("Version", "-")
         self.lbl_slicer_target = ValueLabel("Slicer Target Temp", "-")
+        
+        # NEU: FW Version als Status-Kachel im Grid (Position: dein rotes Quadrat)
+        self.lbl_fw_version = ValueLabel("Panda Firmware", "-")
 
         status_grid.addWidget(self.lbl_state, 0, 0)
         status_grid.addWidget(self.lbl_bed, 0, 1)
@@ -415,8 +418,12 @@ class PandaControlWindow(QMainWindow):
         status_grid.addWidget(self.lbl_mode, 1, 2)
         status_grid.addWidget(self.lbl_power, 1, 3)
         status_grid.addWidget(self.lbl_lock, 2, 0)
-        status_grid.addWidget(self.lbl_version, 2, 1)
-        status_grid.addWidget(self.lbl_slicer_target, 2, 2)
+        status_grid.addWidget(self.lbl_slicer_target, 2, 1)
+        status_grid.addWidget(self.lbl_version, 2, 2)
+        # status_grid.addWidget(self.lbl_version, 2, 1)
+        # Position 2, 3 entspricht der Stelle des roten Quadrats
+        status_grid.addWidget(self.lbl_fw_version, 2, 3)
+        
         status_grid.addWidget(self.lbl_last, 3, 0, 1, 4)
         root.addWidget(status_box)
 
@@ -775,9 +782,15 @@ class PandaControlWindow(QMainWindow):
             elif topic.endswith("/panda_power"):
                 self._set_value_label(self.lbl_power, "lbl_power", value)
                 self._set_toggle_button(self.btn_power, value.upper() == "ON", "Panda Power: EIN", "Panda Power: AUS")
-
+            
             elif topic.endswith("/version"):
+                 # self._set_value_label(self.lbl_version, "lbl_version", value)
                 self._set_value_label(self.lbl_version, "lbl_version", value)
+
+            elif topic.endswith("/fw_version"):
+                # Aktualisiert sowohl die kleine Versions-Kachel als auch die neue Firmware-Kachel
+                # self._set_value_label(self.lbl_version, "lbl_version", value)
+                self._set_value_label(self.lbl_fw_version, "lbl_fw_version", value)
 
             elif topic.endswith("/slicer_target_temp"):
                 self._set_value_label(self.lbl_slicer_target, "lbl_slicer_target", f"{self._fmt_temp_text(value)}")

@@ -676,6 +676,15 @@ async def update_limits_from_ws():
                             bind_warning_shown = False
 
                         incoming_settings = data['settings']
+
+                    # NEU: fw_version extrahieren und publishen falls vorhanden
+                        if 'fw_version' in incoming_settings:
+                            mqtt_client.publish(
+                                f"{MQTT_TOPIC_PREFIX}/fw_version",
+                                str(incoming_settings['fw_version']),
+                                retain=True
+                            )
+
                         last_ws_settings.update(incoming_settings)
                         s = last_ws_settings
 
