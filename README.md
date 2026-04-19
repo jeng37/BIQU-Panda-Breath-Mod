@@ -1,381 +1,509 @@
 <!-- REPO_VIEWS_BADGE_START -->
-![Repository Views](https://img.shields.io/badge/Repository%20Views-1006-blue?style=flat-square)
+![Repository Views](https://img.shields.io/badge/Repository%20Views-3433-blue?style=flat-square)
 <!-- REPO_VIEWS_BADGE_END -->
 
-# BIQU Panda Breath Mod 🚀
-### Panda Logic Sync v1.9.2
+![GitHub Views](https://komarev.com/ghpvc/?username=jeng37&repo=BIQU-Panda-Breath-Mod&style=flat-square&label=Repository+Views&color=blue)
+
+# BIQU-Panda-Breath-Mod 🚀
+### Panda-Logic-Sync v1.9.3 Bug Fixes.
 
 Intelligent control for the **BIQU Panda Breath** chamber heater.
 
-This project emulates a **Bambu Lab-compatible printer** on a host system and enables synchronized chamber heating control for the Panda ecosystem. It currently integrates with **Home Assistant** for parts of the state handling and automation flow, but the long-term goal is to make the project work with **MQTT only**.
+This script simulates a **Bambu Lab printer** on a host system (PC/Server) and enables fully synchronized, intelligent chamber heating based on **real-time Home Assistant temperature data**.
 
-![1](screenshots/1.png)
+<img width="1839" height="912" alt="Screenshot from 2026-03-01 10-36-31" src="https://github.com/user-attachments/assets/50aab4bf-ccf9-4eea-8567-7ef40c84fd36" />
 
-![2](screenshots/2.png)
+<img width="1329" height="897" alt="Screenshot from 2026-03-01 10-37-42" src="https://github.com/user-attachments/assets/89309991-4a4c-4611-bd0c-f5e7c97c90c9" />
+<img width="1329" height="897" alt="Screenshot from 2026-03-01 10-37-47" src="https://github.com/user-attachments/assets/e15c096e-c885-4e7c-b7a1-fb6e755795f8" />
 
-![3](screenshots/3.png)
+<img width="526" height="780" alt="Screenshot from 2026-03-01 10-35-56" src="https://github.com/user-attachments/assets/cb2ca112-8e07-41d9-a7cc-d286a7d684fa" />
 
-![4](screenshots/4.png)
+## ✨ Key Features (v1.9.3)
 
-## Features
+- 🔥 **Immediate Heating in ALL Modes**  
+  No more “wait for bed temperature”. Chamber heating starts instantly when needed.
 
-- Immediate chamber heating in all supported modes
-- Lock / unlock safety logic
-- Stable MQTT synchronization
-- Slicer priority mode support
-- Dry mode support
-- Live terminal monitoring
-- TLS-based Panda connection support
-- Optional desktop GUI for monitoring and control
+- 🔐 **Lock / Unlock Safety System**  
+  Emergency stop with global lock protection.
 
----
+- ⚡ **Power Sync Fix**  
+  Eliminates ON → OFF bounce and UI reset issues.
 
-## How It Works
+- 🧠 **Slicer Priority Mode**  
+  Automatically reads `M191` / `M141` from G-code via Moonraker.
 
-The project simulates a printer that the Panda device can talk to using the expected protocol.
+- 🔄 **Bidirectional MQTT Sync**  
+  Full Home Assistant integration with auto-discovery.
 
-Typical data flow in the current setup:
+- 🎛 **Dry Mode Support**
 
-**Moonraker → Home Assistant → Panda Logic Sync → Panda device / Panda Touch**
+- 📊 **Live Terminal Monitor (flicker-free)**
 
-This allows the Panda hardware to behave as if it were connected to a supported printer while the host system handles the control logic.
-
----
-
-## Current Status
-
-### Home Assistant is still required at the moment
-
-Although the project already uses **MQTT** for communication, the current implementation is still **partly dependent on Home Assistant**.
-
-That means:
-
-- Some states and automation logic still come from the Home Assistant environment
-- The system is not yet fully structured as a standalone MQTT-only solution
-- Home Assistant still provides parts of the integration layer
-
-### Planned change
-
-This will change in a later version.
-
-The goal is to refactor the project so that it no longer depends on Home Assistant and only requires:
-
-- **MQTT**
-- the Panda hardware
-- the host application / scripts
-
-Target outcome:
-
-- no Home Assistant dependency
-- direct MQTT-based communication
-- easier integration into other environments
-- simpler deployment and maintenance
+- 🔒 **TLS Secure Connection (Port 8883)**
 
 ---
 
-## Heating Logic
+## ➕ Firmware v1.0.3 Support (NEW)
 
-### Immediate Heating
+### 🔗 Direct Klipper Binding Support
+Panda Firmware **v1.0.3** allows direct binding to Klipper or host systems.
 
-In all active modes, chamber heating can start immediately when the measured chamber temperature is below the configured target minus hysteresis.
+### 🌐 Remote Backend Support (Raspberry Pi)
+`Panda.py` can now run on a separate system (e.g. Raspberry Pi), while the GUI connects remotely.
 
-Supported modes include:
+### 🖥 Remote GUI Mode
+The Panda GUI can operate fully via MQTT:
 
-- Auto
-- Manual
-- Slicer Priority
-- Dry
+- No local backend execution required
+- GUI acts as a pure control and monitoring interface
 
-Bed temperature is no longer used as a startup blocker.
+### 🔄 Improved MQTT State Sync
+New MQTT topics:
 
-### Bed Temperature Handling
+- `panda_breath_mod/bed` → Bed temperature
+- `panda_breath_mod/heizung` → Heater state (ON / OFF)
 
-Bed temperature is currently used for:
-
-- safety limiting
-- filter fan activation
-
-If the configured bed limit is reached, the system can report that state, but chamber control logic remains active unless another safety condition stops it.
-
----
-
-## Lock System
-
-The **Heizung Stop** action activates a global lock state.
-
-Typical lock behavior:
-
-- heating output disabled
-- work state reset
-- mode reset
-- set temperature reset
-- selected MQTT commands ignored until unlocked
-
-Unlocking is performed through the dedicated **Unlock** command.
+### ⚡ Instant Mode Switching Fix
+- Heater state updates instantly when switching between **Auto / Manual / Dry**
+- No more “stuck” or outdated states
 
 ---
 
-## Slicer Integration
+## 🔗 Binding Process (Firmware v1.0.3 Update)
 
-The project can read chamber-related values from slicer-generated G-code, for example via Moonraker.
+### ➕ New (v1.0.3)
 
-Typical commands:
+When using **Klipper + Panda Backend (e.g. Raspberry Pi)**:
 
-```gcode
+👉 `Printer IP` must point to the system running `Panda.py`
+
+**Example:**
+
+```text
+Printer IP → 192.168.8.8
+
+⚠ Important:
+
+The Panda connects to the backend → not directly to Klipper
+The backend (Panda.py) handles all logic, MQTT, and Moonraker communication
+🖥 Panda Control GUI (v1.0.3 Update)
+
+➕ Remote Mode (NEW)
+
+The GUI now supports Remote Backend Mode:
+
+No local script execution required
+GUI communicates only via MQTT
+Backend runs independently (e.g. Raspberry Pi service)
+
+Behavior:
+
+Start / Stop buttons are disabled in Remote Mode
+GUI acts as pure control & monitoring interface
+📡 MQTT Topics (NEW)
+
+Additional topics introduced with v1.0.3 support:
+
+Topic	Description
+panda_breath_mod/bed	Current bed temperature
+panda_breath_mod/heizung	Heater state (AN / AUS)
+⚠ Important Notes (v1.0.3)
+TLS certificates (cert.pem, key.pem) are required for Panda connection
+Backend must run continuously (systemd recommended)
+MQTT must be reachable from both:
+Panda backend (Raspberry Pi)
+GUI (Workstation)
+---
+
+# 🛠 How It Works
+
+The script emulates a **Bambu-compatible printer** using the native Panda WebSocket protocol.
+
+Data flow:
+Moonraker → Home Assistant → Panda-Logic-Sync → Panda Touch
+
+
+The Panda Breath believes it is connected to a real printer and therefore enables its internal automation logic.
+
+---
+
+# 🧠 Heating Logic (v1.9)
+
+## Immediate Heating
+
+In ALL modes:
+
+- Auto  
+- Manual  
+- Slicer  
+- Dry  
+
+Heating starts immediately when:
+Chamber Temp < Target - Hysteresis
+
+
+❌ No bed wait  
+❌ No start blocker  
+
+---
+
+## Bed Temperature Logic
+
+Bed temperature is now used only for:
+
+- Safety limit
+- Filter fan activation
+
+If:
+Bed ≥ Bed Limit
+Status will show:
+
+Bed Limit reached
+
+
+But chamber control remains active.
+
+---
+
+# 🔐 Lock System
+
+Button: **Heizung Stop**
+
+Activates GLOBAL LOCK:
+
+- work_on = 0  
+- work_mode = 0  
+- set_temp = 0  
+- MQTT commands ignored  
+
+Unlock only possible via:
+Unlock Button
+
+---
+
+# ⚡ Power System
+
+Switch:
+switch.panda_breath_mod_panda_power
+
+
+Fixes:
+
+- No UI bounce
+- No WebSocket feedback loop
+- Stable power sync
+
+---
+
+# 🧩 Slicer Integration (OrcaSlicer)
+
+Enable chamber temperature in filament settings.
+
+The script scans the G-code header via Moonraker:
 M191 S42
 M141 S42
-```
 
-When **Slicer Priority Mode** is enabled, the detected slicer value can be used as the chamber target.
+Automatically sets "ORCAs" detected value as Chamber Target when:
+Slicer Priority Mode = ON
 
 ---
 
-## Installation
+# 📦 Installation
 
-### 1. Clone the repository
+## 1️⃣ Clone Repository
 
 ```bash
 git clone https://github.com/jeng37/BIQU-Panda-Breath-Mod.git
 cd BIQU-Panda-Breath-Mod
-```
 
-### 2. Install system packages
+2️⃣ Install Dependencies
 
-```bash
 sudo apt update
-sudo apt install python3 python3-pip openssl policykit-1 -y
-```
-
-### 3. Install Python dependencies
-
-For the main logic:
-
-```bash
+sudo apt install python3-pip -y
 pip install asyncio websockets requests paho-mqtt
-```
 
-For the desktop GUI:
+3️⃣ Generate SSL Certificates
+Required for Panda connection:
+
+chmod +x cert_gen.sh
+./cert_gen.sh
+
+Or manually:
+openssl req -x509 -newkey rsa:4096 \
+-keyout key.pem \
+-out cert.pem \
+-sha256 -days 3650 -nodes \
+-subj "/C=DE/ST=Panda/L=Panda/O=Bambu/OU=Printer/CN=bambulab.local"
+
+⚙ Configuration
+Edit:
+
+nano Panda.py
+
+Configure:
+
+MQTT
+Broker IP
+Username
+Password
+Panda Hardware
+Panda IP
+Printer SN
+Access Code
+Home Assistant
+Long-Lived Access Token
+Sensor URL
+
+▶ Start Script
+
+sudo python3 Panda.py
+(Port 8883 requires root)
+
+🔗 Binding Process
+Open Panda Web UI:
+http://<PANDA_IP>
+
+Enter:
+
+Printer SN
+Access Code
+Printer IP → HOST_IP
+
+⚠ Do NOT use Scan
+Click Bind directly.
+
+When it changes to Unbind, connection is active.
+
+📊 Live Terminal Monitor
+Example:
+🟢 READY | Bed:61° | Kammer:50/43° | Heiz:AN | Fan:ON | Heizen... | NORMAL:0°
+Field	Meaning
+Bed	Bed temperature
+Kammer	Target / Current
+Heiz	Relay state
+Fan	Filter fan
+NORMAL / SL-PRIO	Slicer mode
+
+🏠 Home Assistant Entities (Auto-Discovery)
+Numbers
+
+Kammer Soll
+Bett Limit
+Filter Temp
+Dry Temp
+Dry Time
+
+Switches
+
+Panda Power
+Slicer Priority Mode
+
+Buttons
+
+Auto
+Manual
+Drying
+Heizung Stop
+Unlock
+
+Sensors
+
+Kammer Ist
+Slicer Soll
+Slicer Target Temp
+Panda Status
+Panda Modus
+Lock Status
+Version
+
+🛡 Safety Behaviour
+Situation	Result
+HA sensor failure	Heating OFF
+Lock active	Everything OFF
+Work mode 0	Standby
+Panda Power OFF	Hard shutdown
+
+### NEW ###
+# Panda Control GUI
+
+Eine Desktop-GUI für die Steuerung und Überwachung des **Panda Breath Mod** über **MQTT**.  
+Die Anwendung wurde mit **Python** und **PySide6** entwickelt und bietet eine einfache Oberfläche, um Statuswerte anzuzeigen, Modi umzuschalten und Sollwerte direkt zu senden.
+
+## Funktionen
+
+- Starten und Stoppen des Hauptskripts direkt aus der GUI
+- Live-Anzeige von:
+  - Status
+  - Bett-Temperatur
+  - Kammer-Soll / Kammer-Ist
+  - Heizstatus
+  - Lüfterstatus
+  - Lock-Status
+  - Panda Power
+  - Version
+  - Slicer-Zieltemperatur
+- Steuerung per MQTT:
+  - Auto-Modus
+  - Manueller Modus
+  - Dry-Modus
+  - Heizung stoppen
+  - Unlock
+  - Slicer Mode ein/aus
+  - Panda Power ein/aus
+- Setzen von:
+  - Bett-Limit
+  - Kammer-Solltemperatur
+  - Filter-Fan-Starttemperatur
+  - Dryer-Temperatur
+  - Dryer-Zeit
+- Live-Log-Ausgabe des gestarteten Python-Skripts
+- MQTT-Verbindungsstatus direkt in der GUI sichtbar
+
+---
+
+## Voraussetzungen
+
+- Python 3.10+
+- [PySide6](https://pypi.org/project/PySide6/)
+- [paho-mqtt](https://pypi.org/project/paho-mqtt/)
+- Linux-System mit `pkexec`, da das Hauptskript aktuell mit Root-Rechten gestartet wird
+
+Installation der Python-Abhängigkeiten:
 
 ```bash
 pip install PySide6 paho-mqtt
-```
 
-Or install everything together:
+Starten
 
-```bash
-pip install websockets requests paho-mqtt PySide6
-```
+Die GUI kann direkt mit Python gestartet werden:
 
-Notes:
-
-- `asyncio` is part of the Python standard library in modern Python versions, so it usually does **not** need to be installed separately
-- `pkexec` is **not** a pip package; it is provided by the operating system
-
-### 4. Generate certificates
-
-TLS certificates are required for the Panda connection.
-
-```bash
-chmod +x cert_gen.sh
-./cert_gen.sh
-```
-
-Or generate them manually:
-
-```bash
-openssl req -x509 -newkey rsa:4096 \
-  -keyout key.pem \
-  -out cert.pem \
-  -sha256 -days 3650 -nodes \
-  -subj "/C=DE/ST=Panda/L=Panda/O=Bambu/OU=Printer/CN=bambulab.local"
-```
-
----
-
-## Configuration
-
-Edit the main script and adjust the configuration to your own environment.
-
-Example:
-
-```bash
-nano panda_config.json
-```
-
-Configure values such as:
-
-- MQTT broker settings
-- MQTT username / password
-- Panda device settings
-- printer serial number
-- access code
-- host address
-- Home Assistant token and related endpoints if you use the current HA-based setup
-
-Do **not** publish private IP addresses, usernames, passwords, access tokens, serial numbers, or access codes in your public repository.
-
----
-
-## Start the Main Script
-
-```bash
-sudo python3 Panda.py
-```
-
-Root privileges may be required depending on your runtime setup and port usage.
-
----
-
-## Binding Process
-
-Open the Panda web interface on your device and enter your local values for:
-
-- printer serial number
-- access code
-- host IP / hostname
-
-Do not use automatic scan if your setup expects manual binding.
-
-Once the interface switches to **Unbind**, the connection is active.
-
----
-
-## Live Terminal Output
-
-Example status line:
-
-```text
-🟢 READY | Bed:61° | Kammer:50/43° | Heiz:AN | Fan:ON | Heating... | NORMAL:0°
-```
-
-Field overview:
-
-| Field | Meaning |
-|---|---|
-| Bed | Bed temperature |
-| Kammer | Target / current chamber temperature |
-| Heiz | Heater relay state |
-| Fan | Filter fan state |
-| NORMAL / SL-PRIO | Active operating mode |
-
----
-
-## Home Assistant Entities
-
-The current version can expose or use entities such as the following through Home Assistant integration.
-
-### Numbers
-
-- Chamber target
-- Bed limit
-- Filter temperature
-- Dry temperature
-- Dry time
-
-### Switches
-
-- Panda power
-- Slicer priority mode
-
-### Buttons
-
-- Auto
-- Manual
-- Drying
-- Heater stop
-- Unlock
-
-### Sensors
-
-- Chamber actual temperature
-- Slicer target
-- Panda status
-- Panda mode
-- Lock status
-- Version
-
----
-
-## Panda Control GUI
-
-A desktop GUI for controlling and monitoring the **Panda Breath Mod** over **MQTT**.
-
-It is written in **Python** using **PySide6** and provides a direct interface for status display, mode switching, and sending setpoints.
-
-![1](screenshots/gui-1.png)
-
-![2](screenshots/gui-2.png)
-
-### GUI Features
-
-- Start and stop the main script from the GUI
-- Live status display for:
-  - current state
-  - bed temperature
-  - chamber target / actual temperature
-  - heater state
-  - fan state
-  - lock state
-  - Panda power
-  - version
-  - slicer target temperature
-- MQTT-based control for:
-  - Auto mode
-  - Manual mode
-  - Dry mode
-  - Heater stop
-  - Unlock
-  - Slicer mode on / off
-  - Panda power on / off
-- Send values for:
-  - bed limit
-  - chamber target
-  - filter fan start temperature
-  - dryer temperature
-  - dryer time
-- Live log output from the started Python script
-- Visible MQTT connection status in the GUI
-
-### GUI Start
-
-```bash
 python3 PandaGui.py
-```
 
-By default, the GUI is set up to launch a local Panda script, but this path can be changed through the **Select Script** action in the interface.
+Standardmäßig wird folgendes Hauptskript verwendet:
 
-### GUI Notes
+~/Panda/Panda-1.py
 
-- The GUI already communicates through MQTT
-- The larger project logic is still partially Home Assistant dependent at this time
-- The long-term goal is to make the full stack work with MQTT only
-- Private broker addresses, credentials, and local network details should not be committed to GitHub
+Dieses kann in der GUI aber auch über „Skript wählen“ geändert werden.
 
----
+MQTT-Konfiguration
 
-## Safety Behavior
+Aktuell sind die MQTT-Zugangsdaten direkt im Quellcode hinterlegt:
 
-| Situation | Result |
-|---|---|
-| Home Assistant sensor failure | Heating off |
-| Lock active | Everything off |
-| Work mode = 0 | Standby |
-| Panda power off | Forced shutdown |
+Broker: 192.168.8.195
 
----
+Port: 1883
 
-## Roadmap
+Benutzer: mqttadmin
 
-- Remove the remaining Home Assistant dependency
-- Move to a pure MQTT-only architecture
-- Move MQTT settings into a config file
-- Improve error handling and logging
-- Clean separation between GUI, MQTT client, and core logic
-- Package the application more cleanly for Linux deployment
+Topic-Präfix:
 
----
+panda_breath_mod
 
-## License
+Die GUI subscribed auf:
 
-No license has been defined yet.
+panda_breath_mod/#
 
+und veröffentlicht Steuerbefehle unter den jeweiligen /set Topics.
+
+Wichtiger Hinweis: Aktueller Stand
+Der aktuelle Stand ist noch Home-Assistant-abhängig
+
+Auch wenn diese GUI bereits direkt per MQTT arbeitet, ist das Gesamtsystem im Moment noch teilweise von Home Assistant abhängig.
+
+Das bedeutet:
+
+Einige States bzw. Automationen kommen derzeit noch aus der bestehenden Home-Assistant-Umgebung
+
+Die aktuelle Struktur ist noch nicht vollständig als unabhängige Standalone-MQTT-Lösung ausgelegt
+
+Home Assistant übernimmt derzeit noch Teile der Logik bzw. Integration im Gesamtsystem
+
+Ziel für spätere Versionen
+
+Das wird in einer späteren Version geändert.
+
+Geplant ist, das System so umzubauen, dass keine Home-Assistant-Abhängigkeit mehr besteht und die Anwendung bzw. das Gesamtsystem nur noch MQTT benötigt.
+
+Das Ziel ist also:
+
+kein Home Assistant mehr notwendig
+
+direkte Kommunikation ausschließlich über MQTT
+
+einfachere Integration in andere Systeme
+
+leichtere Portierbarkeit und weniger externe Abhängigkeiten
+
+Bedienung
+Prozesssteuerung
+
+Start startet das gewählte Hauptskript per pkexec
+
+Stop beendet das laufende Skript
+
+Log leeren leert die Log-Ausgabe
+
+Modi
+
+Auto → sendet auto/set = 1
+
+Manuell → sendet manual/set = PRESS
+
+Dry → sendet drying/set = 1
+
+Weitere Befehle
+
+Stop Heizen → heizung_stop/set = PRESS
+
+Unlock → unlock/set = PRESS
+
+Slicer Mode → slicer_priority_mode/set = ON/OFF
+
+Panda Power → panda_power/set = ON/OFF
+
+Sollwerte
+
+Die GUI kann folgende Werte direkt senden:
+
+Bett Limit → limit/set
+
+Kammer Soll → soll/set
+
+Filter Fan Start → filtertemp/set
+
+Dryer Temp → dry_temp/set
+
+Dryer Time → dry_time/set
+
+Hinweise zur aktuellen Implementierung
+
+Das Hauptskript wird derzeit mit Root-Rechten über pkexec gestartet
+
+Die GUI verarbeitet eingehende MQTT-Nachrichten direkt und aktualisiert die Oberfläche live
+
+Zusätzlich werden Statuszeilen aus der Skriptausgabe per Regex geparst und in der GUI dargestellt
+
+ANSI-Steuerzeichen aus der Terminalausgabe werden entfernt, damit das Log sauber lesbar bleibt
+
+Roadmap
+
+ Home-Assistant-Abhängigkeit entfernen
+
+ Reiner MQTT-Betrieb
+
+ MQTT-Konfiguration aus Datei statt fest im Code
+
+ Bessere Fehlerbehandlung und Rückmeldungen
+
+ Saubere Trennung zwischen GUI, MQTT-Client und Prozesssteuerung
+
+ Optional: Packaging als eigenständige Linux-App
+
+📝 License
+
+MIT License
+
+⚠ Disclaimer
+
+Use at your own risk.
+Always follow fire safety regulations when operating heating devices in 3D printer enclosures.

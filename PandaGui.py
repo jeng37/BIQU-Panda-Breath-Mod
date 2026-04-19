@@ -62,7 +62,10 @@ DEFAULT_CONFIG = {
     "HA_BED_TEMPERATURE_ENTITY": "sensor.ks1c_bed_temperature",
     "HA_BASE_URL": "http://192.168.x.xxx:8123",
     "HA_TOKEN": "",
-    "PRINTER_IP": "192.168.x.xxx"
+    "PRINTER_IP": "192.168.x.xxx",
+    "REMOTE_MODE": True,
+    "BACKEND_HOST": "192.168.8.8",
+    "BACKEND_PORT": 8883
 }
 
 CONFIG_SCHEMA = [
@@ -82,6 +85,9 @@ CONFIG_SCHEMA = [
     ("HA_BASE_URL", "str", "Home Assistant Basis-URL"),
     ("HA_TOKEN", "str", "Home Assistant Long-Lived Token"),
     ("PRINTER_IP", "str", "IP vom Drucker bzw. Moonraker"),
+    ("REMOTE_MODE", "bool", "True = GUI läuft nur als Remote-GUI und startet Panda.py nicht lokal."),
+    ("BACKEND_HOST", "str", "Host/IP des Rechners, auf dem Panda.py läuft."),
+    ("BACKEND_PORT", "int", "Port des Panda TLS-Servers (Standard 8883)."),
 ]
 
 CONFIG_COMMENTS = {
@@ -101,6 +107,9 @@ CONFIG_COMMENTS = {
     "HA_BASE_URL": "Basis-URL deiner Home Assistant Instanz, z. B. http://homeassistant.local:8123.",
     "HA_TOKEN": "Home Assistant Long-Lived Access Token.",
     "PRINTER_IP": "IP-Adresse des Druckers bzw. Moonraker-Hosts.",
+    "REMOTE_MODE": "True = Diese GUI nutzt nur MQTT/Remote-Zugriff und startet kein lokales Backend.",
+    "BACKEND_HOST": "IP-Adresse des Raspberry Pi bzw. Rechners, auf dem Panda.py läuft.",
+    "BACKEND_PORT": "TLS-Port des Panda-Emulators auf dem Backend-Rechner, normalerweise 8883.",
 }
 
 
@@ -189,8 +198,8 @@ class ConfigDialog(QDialog):
         root = QVBoxLayout(self)
 
         info = QLabel(
-            "Backend und GUI verwenden dieselbe JSON-Konfiguration. "
-            "Wichtig: HOST_IP ist die IP dieses PCs und muss in der Panda UI bei Printer IP eingetragen sein."
+            "GUI und Backend können dieselbe JSON-Struktur verwenden, müssen aber nicht auf demselben Rechner liegen. "
+            "Wenn Panda.py auf dem Raspberry Pi läuft, muss in der Panda UI bei Printer IP die HOST_IP des Raspberry Pi eingetragen sein."
         )
         info.setWordWrap(True)
         info.setStyleSheet("color:#ddd;")
@@ -296,9 +305,8 @@ class ConfigDialog(QDialog):
         QMessageBox.information(
             self,
             "Gespeichert",
-            "Die Konfiguration wurde in der JSON-Datei gespeichert.\n"
-            "Backend und GUI verwenden jetzt dieselbe Konfiguration.\n"
-            "Wichtig: In der Panda UI muss Printer IP = HOST_IP sein."
+            "Die Konfiguration wurde gespeichert.\n"
+            "Wenn Panda.py auf dem Raspberry Pi läuft, muss in der Panda UI Printer IP = HOST_IP des Raspberry Pi sein."
         )
         self.accept()
 
@@ -329,9 +337,11 @@ class PandaControlWindow(QMainWindow):
                 self.setWindowIcon(theme_icon)
 
         self.process = None
-        self.script_path = str(Path.home() / "Panda" / "Panda-1.py")
+        local_base = Path(__file__).resolve().parent
+        default_script = local_base / "Panda.py"
+        self.script_path = str(default_script if default_script.exists() else (Path.home() / "Panda" / "Panda.py"))
         self.working_dir = str(Path(self.script_path).parent)
-        self.config_path = str(get_default_config_path(self.script_path))
+        self.config_path = str(local_base / CONFIG_FILE_NAME)
         self.runtime_config = ensure_config(Path(self.config_path))
         self.state_cache = {}
         self.mqtt_connected = False
@@ -348,6 +358,7 @@ class PandaControlWindow(QMainWindow):
         self.mqtt_disconnect_signal.connect(self._handle_mqtt_disconnected)
 
         self._setup_mqtt()
+        self._apply_runtime_mode()
 
     def _build_ui(self):
         central = QWidget()
@@ -520,6 +531,25 @@ class PandaControlWindow(QMainWindow):
         choose_action.triggered.connect(self.choose_script)
         menu.addAction(choose_action)
 
+    def _is_remote_mode(self) -> bool:
+        return bool(self.runtime_config.get("REMOTE_MODE", DEFAULT_CONFIG.get("REMOTE_MODE", False)))
+
+    def _apply_runtime_mode(self):
+        remote = self._is_remote_mode()
+        self.start_btn.setEnabled(not remote)
+        self.stop_btn.setEnabled(False if remote or not self.process else self.stop_btn.isEnabled())
+        self.script_edit.setReadOnly(remote)
+        self.browse_btn.setEnabled(not remote)
+        if remote:
+            backend = self.runtime_config.get("BACKEND_HOST", "192.168.8.8")
+            self.status_badge.setText("Remote GUI")
+            self.status_badge.setStyleSheet(
+                "background:#1f4f8b;color:white;padding:8px 14px;border-radius:12px;font-weight:700;"
+            )
+            if self.display_cache.get("runtime_mode_backend") != backend:
+                self.display_cache["runtime_mode_backend"] = backend
+                self.append_log(f"[GUI] Remote-Modus aktiv. Backend läuft auf {backend}.\n")
+
     def _connect_actions(self):
         self.browse_btn.clicked.connect(self.choose_script)
         self.config_btn.clicked.connect(self.open_config_dialog)
@@ -543,16 +573,15 @@ class PandaControlWindow(QMainWindow):
 
     def open_config_dialog(self):
         script = self.script_edit.text().strip()
-        if not script or not os.path.exists(script):
-            QMessageBox.warning(self, "Fehler", "Bitte zuerst ein gültiges Panda-Skript auswählen.")
-            return
+        if script and os.path.exists(script) and not self._is_remote_mode():
+            self.config_path = str(get_default_config_path(script))
 
-        self.config_path = str(get_default_config_path(script))
         dlg = ConfigDialog(self.config_path, self)
         if dlg.exec():
             self.runtime_config = ensure_config(Path(self.config_path))
             self.append_log(f"[GUI] Konfiguration gespeichert in: {self.config_path}\n")
             self._reload_mqtt_from_config()
+            self._apply_runtime_mode()
 
     def _set_mode_button_styles(self, active_mode=None):
         active_style = (
@@ -625,6 +654,7 @@ class PandaControlWindow(QMainWindow):
         except Exception:
             pass
         self._setup_mqtt()
+        self._apply_runtime_mode()
 
     def on_mqtt_connect(self, client, userdata, flags, reason_code, properties=None):
         client.subscribe(f"{self.topic_prefix}/#")
@@ -768,7 +798,14 @@ class PandaControlWindow(QMainWindow):
         self._updating_from_mqtt = True
         try:
             if topic.endswith("/status"):
+                self._set_value_label(self.lbl_state, "lbl_state", value)
                 self._set_value_label(self.lbl_info, "lbl_info", value)
+
+            elif topic.endswith("/bed"):
+                self._set_value_label(self.lbl_bed, "lbl_bed", self._fmt_temp_text(value))
+
+            elif topic.endswith("/heizung"):
+                self._set_value_label(self.lbl_heiz, "lbl_heiz", value)
 
             elif topic.endswith("/panda_modus"):
                 self._set_value_label(self.lbl_mode, "lbl_mode", value)
@@ -858,6 +895,14 @@ class PandaControlWindow(QMainWindow):
         self.publish("panda_power/set", "OFF" if current else "ON")
 
     def choose_script(self):
+        if self._is_remote_mode():
+            QMessageBox.information(
+                self,
+                "Remote-Modus aktiv",
+                "Im Remote-Modus wird Panda.py nicht lokal gestartet. Ändere die Werte über die Config."
+            )
+            return
+
         path, _ = QFileDialog.getOpenFileName(
             self,
             "Python-Skript wählen",
@@ -936,6 +981,16 @@ class PandaControlWindow(QMainWindow):
         self.status_badge.setStyleSheet(badge_style)
 
     def start_process(self):
+        if self._is_remote_mode():
+            backend = self.runtime_config.get("BACKEND_HOST", "192.168.8.8")
+            QMessageBox.information(
+                self,
+                "Remote-Modus",
+                f"Diese GUI startet Panda.py nicht lokal.\n\nStarte Panda.py direkt auf dem Backend {backend}."
+            )
+            self.append_log(f"[GUI] Start übersprungen: Remote-Modus, Backend={backend}\n")
+            return
+
         script = self.script_edit.text().strip()
         if not script:
             QMessageBox.warning(self, "Fehler", "Bitte ein Python-Skript auswählen.")

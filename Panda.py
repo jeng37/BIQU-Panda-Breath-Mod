@@ -16,7 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # - Entfernt NICHTS: Original bleibt, Erweiterungen sind additiv/ersetzend innerhalb
 #   der bestehenden Struktur (nur ergänzt/erweitert).
 # ============================================================
-PANDA_VERSION = "v1.9.2"
+PANDA_VERSION = "v1.9.3"
 last_reported_mode = None
 mode_change_hint = ""
 heating_locked = False
@@ -331,13 +331,24 @@ def on_mqtt_message(client, userdata, msg):
         heating_locked = False
         power_forced_off = False
         current_data["kammer_soll"] = 45.0
+        if current_data.get("kammer_ist", 0) < (current_data["kammer_soll"] - HYSTERESE):
+            global_heating_state = 85.0
+        else:
+            global_heating_state = 20.0
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Manuell", retain=True)
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode", "OFF", retain=True)
+        mqtt_client.publish(
+            f"{MQTT_TOPIC_PREFIX}/heizung",
+            "AN" if global_heating_state > 50 else "AUS",
+            retain=True
+        )
         async def flow():
             if panda_ws:
                 await panda_ws.send(json.dumps({"settings": {"isrunning": 0}}))
                 await asyncio.sleep(0.2)
                 await panda_ws.send(json.dumps({"settings": {"work_mode": 2}}))
+                await asyncio.sleep(0.2)
+                await panda_ws.send(json.dumps({"settings": {"work_on": 1, "isrunning": 1}}))
         asyncio.run_coroutine_threadsafe(flow(), main_loop)
         return
 
@@ -346,7 +357,13 @@ def on_mqtt_message(client, userdata, msg):
         log_event(">>> AUTO MODE ENTERED <<<", force_console=True)
         heating_locked = False
         power_forced_off = False
+        global_heating_state = 20.0
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Automatik", retain=True)
+        mqtt_client.publish(
+            f"{MQTT_TOPIC_PREFIX}/heizung",
+            "AUS",
+            retain=True
+        )
         current_data["slicer_priority_mode"] = False
         async def flow():
             if panda_ws:
@@ -1064,6 +1081,8 @@ async def handle_panda(reader, writer):
                 # Status-Entitäten an HA senden
                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/status", info, retain=True)
                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_heiz_status", info, retain=True)
+                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/bed", f"{bed_ist:.1f}", retain=True)
+                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/heizung", "AN" if global_heating_state > 50 else "AUS", retain=True)
                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/fan", fan_state, retain=True)
                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/version", PANDA_VERSION, retain=True)
 
