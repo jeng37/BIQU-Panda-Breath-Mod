@@ -114,15 +114,11 @@ current_data = {
 }
 
 ha_memory = {"kammer_soll": 30.0, "bett_limit": 50.0}
-global_heating_state = 20.0
-last_switch_time = 0
 last_ha_change = 0
 panda_ws = None
 main_loop = None
 terminal_cleared = False
 # Merkt sich den letzten vollständigen WS-Settings-Stand
-last_reported_mode = None
-mode_change_hint = ""
 last_ws_settings = {}
 power_forced_off = False # Ergänzt für Logik-Vollständigkeit
 
@@ -162,6 +158,19 @@ def log_event(msg, force_console=False):
     # 2️⃣ Konsole nur bei DEBUG oder Force
     if DEBUG or force_console:
         print(f" INFO:PandaDebug:{msg}")
+
+    # 3️⃣ Remote GUI Live-Log via MQTT
+    # Nur senden, wenn DEBUG aktiv ist oder ein wichtiger Force-Log kommt.
+    try:
+        if (DEBUG or force_console) and "mqtt_client" in globals():
+            ts = time.strftime("%H:%M:%S")
+            mqtt_client.publish(
+                f"{MQTT_TOPIC_PREFIX}/log",
+                f"[{ts}] {msg}",
+                retain=False
+            )
+    except Exception:
+        pass
             
 # --- HELPER ---
 def safe_float(v, default=0.0):
@@ -331,7 +340,7 @@ def on_mqtt_message(client, userdata, msg):
         log_event(">>> MANUELL MODE ENTERED <<<", force_console=True)
         heating_locked = False
         power_forced_off = False
-        current_data["kammer_soll"] = max(current_data.get("kammer_soll", 0), 1.0)
+        
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Manuell", retain=True)
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode", "OFF", retain=True)
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_power", "ON", retain=True)
@@ -348,6 +357,7 @@ def on_mqtt_message(client, userdata, msg):
                         "isrunning": 1
                     }
                 }))
+
         asyncio.run_coroutine_threadsafe(flow(), main_loop)
         return
 
@@ -373,6 +383,7 @@ def on_mqtt_message(client, userdata, msg):
                     },
                     "ui_action": "auto"
                 }))
+
         asyncio.run_coroutine_threadsafe(flow(), main_loop)
         return
         
@@ -388,18 +399,18 @@ def on_mqtt_message(client, userdata, msg):
             "Dry",
             retain=True
         )
+        mqtt_client.publish(
+            f"{MQTT_TOPIC_PREFIX}/panda_power",
+            "ON",
+            retain=True
+        )
 
         async def flow():
             if panda_ws:
                 await panda_ws.send(json.dumps({
                     "settings": {
-                        "work_mode": 3
-                    }
-                }))
-                await asyncio.sleep(0.2)
-
-                await panda_ws.send(json.dumps({
-                    "settings": {
+                        "work_mode": 3,
+                        "work_on": True,
                         "isrunning": 1
                     }
                 }))
@@ -534,6 +545,7 @@ def setup_mqtt():
     return client
 
 mqtt_client = setup_mqtt()
+log_event("[MQTT] Backend logging topic active", force_console=True)
 
 def setup_mqtt_discovery():
     base, dev = MQTT_TOPIC_PREFIX, {"identifiers": [PRINTER_SN], "name": "Panda Breath Mod", "model": "V6.8 Final", "manufacturer": "Biqu"}
@@ -745,16 +757,24 @@ async def update_limits_from_ws():
 
                             ws_temp = float(incoming_settings['set_temp'])
                             slicer_active = current_data.get("slicer_priority_mode", False)
+                            ws_work_mode = int(s.get("work_mode", 0) or 0)
+                            ws_work_on = s.get("work_on") in (1, True, "1")
 
                             if slicer_active:
-                                current_data["kammer_soll"] = ws_temp
-                                mqtt_client.publish(
-                                    f"{MQTT_TOPIC_PREFIX}/soll",
-                                    int(ws_temp),
-                                    retain=True
-                                )
+                                if ws_temp > 0:
+                                    current_data["kammer_soll"] = ws_temp
+                                    mqtt_client.publish(
+                                        f"{MQTT_TOPIC_PREFIX}/soll",
+                                        int(ws_temp),
+                                        retain=True
+                                    )
                             else:
-                                if (time.time() - last_ha_change) > 5.0:
+                                if (
+                                    (time.time() - last_ha_change) > 5.0
+                                    and ws_temp > 0
+                                    and ws_work_mode in (1, 2, 3)
+                                    and ws_work_on
+                                ):
                                     current_data["kammer_soll"] = ws_temp
                                     mqtt_client.publish(
                                         f"{MQTT_TOPIC_PREFIX}/soll",
@@ -782,16 +802,15 @@ async def update_limits_from_ws():
 
                         if global_lock:
                             modus = "LOCKED"
+                        elif power_forced_off:
+                            modus = "Standby"
                         else:
-                            if work_on in (1, True, "1"):
-                                if work_mode == 1:
-                                    modus = "Automatik"
-                                elif work_mode == 2:
-                                    modus = "Manuell"
-                                elif work_mode == 3:
-                                    modus = "Dry"
-                                else:
-                                    modus = "Standby"
+                            if work_mode == 1:
+                                modus = "Automatik"
+                            elif work_mode == 2:
+                                modus = "Manuell"
+                            elif work_mode == 3:
+                                modus = "Dry"
                             else:
                                 modus = "Standby"
 
@@ -888,14 +907,14 @@ async def update_limits_from_ws():
                         ist = float(current_data.get("kammer_ist", 0))
                         limit = float(current_data.get("bett_limit", 50))
                         bed_ist = float(current_data.get("bed_temp", 0))
-                        work_mode_live = s.get("work_mode")
+                        work_mode_live = int(s.get("work_mode", 0) or 0)
                         work_on_live = s.get("work_on")
                         panda_running = s.get("isrunning") in (1, True, "1")
 
                         if global_lock:
                             target_state, info = 20.0, "LOCKED"
 
-                        elif work_on_live not in (1, True, "1") or work_mode_live not in (1, 2, 3):
+                        elif power_forced_off or work_mode_live not in (1, 2, 3):
                             target_state, info = 20.0, "Standby"
 
                         elif work_mode_live == 3:
@@ -930,7 +949,7 @@ async def update_limits_from_ws():
                         time_passed = (time.time() - last_switch_time)
 
                         if target_state == 20.0:
-                            if global_heating_state != 20.0 or panda_running:
+                            if global_heating_state != 20.0 or panda_running or work_on_live in (1, True, "1"):
                                 global_heating_state = 20.0
                                 last_switch_time = time.time()
                                 try:
@@ -938,9 +957,7 @@ async def update_limits_from_ws():
                                         await panda_ws.send(json.dumps({
                                             "settings": {
                                                 "isrunning": 0,
-                                                "work_on": False,
-                                                "work_mode": 0,
-                                                "set_temp": 0
+                                                "work_on": False
                                             }
                                         }))
                                 except Exception as e:
@@ -959,12 +976,14 @@ async def update_limits_from_ws():
                                 if panda_ws:
                                     await panda_ws.send(json.dumps({
                                         "settings": {
-                                            "work_on": 1,
+                                            "work_on": True,
                                             "isrunning": 1
                                         }
                                     }))
                             except Exception as e:
                                 log_event(f"[AUTO-ON-ERR] {e}", force_console=True)
+
+                        fan_state = "ON" if bed_ist >= float(current_data.get("filtertemp", 30.0)) else "OFF"
 
                         mqtt_client.publish(
                             f"{MQTT_TOPIC_PREFIX}/heizung",
@@ -974,6 +993,16 @@ async def update_limits_from_ws():
                         mqtt_client.publish(
                             f"{MQTT_TOPIC_PREFIX}/status",
                             info,
+                            retain=True
+                        )
+                        mqtt_client.publish(
+                            f"{MQTT_TOPIC_PREFIX}/panda_heiz_status",
+                            info,
+                            retain=True
+                        )
+                        mqtt_client.publish(
+                            f"{MQTT_TOPIC_PREFIX}/fan",
+                            fan_state,
                             retain=True
                         )
 
@@ -1089,6 +1118,7 @@ async def handle_panda(reader, writer):
                 target, ist, limit = current_data["kammer_soll"], current_data["kammer_ist"], current_data["bett_limit"]
                 f_threshold = current_data.get("filtertemp", 30.0)
                 work_mode = int(last_ws_settings.get("work_mode", 0) or 0)
+                work_on = last_ws_settings.get("work_on")
 
                 # ============================================================
                 # ✅ GLOBAL LOCK LOGIK (FIXED & STABILE HYSTERESE)
@@ -1098,64 +1128,36 @@ async def handle_panda(reader, writer):
                     global_heating_state = 20.0
 
                 else:
-                    # Standby → alles aus
-                    if work_mode == 0:
+                    if power_forced_off or work_mode not in (1, 2, 3):
                         target_state, info = 20.0, "Standby"
 
-                    else:
-                        target_state = global_heating_state
+                    elif work_mode == 3:
+                        target = float(last_ws_settings.get("custom_temp", current_data.get("filament_temp", target)))
+                        remaining = int(last_ws_settings.get("remaining_seconds", 0) or 0)
 
-                        # =====================================
-                        # 🔥 DRY MODE (eigene Logik)
-                        # =====================================
-                        if work_mode == 3:
-
-                            target = float(
-                                last_ws_settings.get("custom_temp", target)
-                            )
-
-                            remaining = int(
-                                last_ws_settings.get("remaining_seconds", 0)
-                            )
-
-                            if remaining <= 0:
-                                target_state, info = 20.0, "Fertig"
-
-                            elif ist < (target - HYSTERESE):
-                                target_state, info = 85.0, "Heizen..."
-
-                            elif ist >= target:
-                                target_state, info = 20.0, "Ziel erreicht"
-
-                            else:
-                                info = "Hysterese"
-
-                        # =====================================
-                        # 🔥 AUTO / MANUELL
-                        # =====================================
+                        if remaining <= 0:
+                            target_state, info = 20.0, "Fertig"
+                        elif ist < (target - HYSTERESE):
+                            target_state, info = 85.0, "Heizen..."
                         else:
+                            target_state, info = 20.0, "Hysterese"
 
-                            # 🖨️ Druck erkannt (Bett deutlich über Limit)
-                            printing = bed_ist > (limit + 5)
+                    elif work_mode == 1:
+                        if bed_ist <= limit:
+                            target_state, info = 20.0, "Fertig"
+                        elif ist < (target - HYSTERESE):
+                            target_state, info = 85.0, "Heizen..."
+                        else:
+                            target_state, info = 20.0, "Hysterese"
 
-                            # 🏁 Druck fertig (Bett unter Limit)
-                            finished = bed_ist < limit
+                    elif work_mode == 2:
+                        if ist < (target - HYSTERESE):
+                            target_state, info = 85.0, "Heizen..."
+                        else:
+                            target_state, info = 20.0, "Hysterese"
 
-                            # 🔥 Heizen wenn Kammer zu kalt
-                            if ist < (target - HYSTERESE):
-                                target_state, info = 85.0, "Heizen..."
-
-                            # 🎯 Ziel erreicht
-                            elif ist >= target:
-                                target_state, info = 20.0, "Ziel erreicht"
-
-                            # 🔄 Hysterese Bereich
-                            else:
-                                info = "Hysterese"
-
-                            # 🛑 Druck fertig → Heizung aus
-                            if work_mode == 1 and finished:
-                                target_state, info = 20.0, "Fertig"
+                    else:
+                        target_state, info = 20.0, "Standby"
 
                     # ========================================================
                     # ⏱ SWITCH-TIMER LOGIK
@@ -1171,7 +1173,7 @@ async def handle_panda(reader, writer):
                         and (
                             current_data.get("slicer_priority_mode", False)
                             or time_passed > MIN_SWITCH_TIME
-                        )    
+                        )
                     ):
                         global_heating_state = target_state
                         last_switch_time = time.time()
