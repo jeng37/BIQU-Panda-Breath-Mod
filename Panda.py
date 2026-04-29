@@ -121,8 +121,6 @@ terminal_cleared = False
 # Merkt sich den letzten vollständigen WS-Settings-Stand
 last_ws_settings = {}
 power_forced_off = False # Ergänzt für Logik-Vollständigkeit
-last_live_log_state = None
-last_live_log_time = 0
 
 # ============================================================
 # --- LOGGING SETUP (DEBUG / CRITICAL Umschaltbar) ---
@@ -628,8 +626,6 @@ def setup_mqtt_discovery():
 async def update_limits_from_ws():
     global panda_ws, bind_confirmed, bind_warning_shown
     global global_heating_state, last_switch_time
-    global last_live_log_state, last_live_log_time
-
     uri = f"ws://{PANDA_IP}/ws"
 
     while True:
@@ -672,7 +668,7 @@ async def update_limits_from_ws():
 
         # ===== NORMALER WS BETRIEB =====
         try:
-            async with websockets.connect(uri, ping_interval=None, close_timeout=1) as websocket:
+            async with websockets.connect(uri, ping_interval=20) as websocket:
 
                 log_event(f"[WS] Verbunden mit Panda {PANDA_IP}")
                 panda_ws = websocket
@@ -953,15 +949,23 @@ async def update_limits_from_ws():
                         time_passed = (time.time() - last_switch_time)
 
                         if target_state == 20.0:
-                            if global_heating_state != 20.0 or panda_running or work_on_live in (1, True, "1"):
+                            now_stop = time.time()
+
+                            # Hysterese/Fertig/Standby darf NICHT work_mode oder set_temp ändern.
+                            # Es wird nur der aktive Heizlauf gestoppt.
+                            # Wenn der Panda weiterhin isrunning=1 meldet, wird der Stop-Befehl
+                            # alle 2 Sekunden erneut gesendet, bis der Panda wirklich stoppt.
+                            if global_heating_state != 20.0:
                                 global_heating_state = 20.0
-                                last_switch_time = time.time()
+                                last_switch_time = now_stop
+
+                            if panda_running and (now_stop - last_stop_command_time) >= 2.0:
+                                last_stop_command_time = now_stop
                                 try:
                                     if panda_ws:
                                         await panda_ws.send(json.dumps({
                                             "settings": {
-                                                "isrunning": 0,
-                                                "work_on": False
+                                                "isrunning": 0
                                             }
                                         }))
                                 except Exception as e:
@@ -976,6 +980,7 @@ async def update_limits_from_ws():
                         ) or (target_state > 50 and not panda_running):
                             global_heating_state = target_state
                             last_switch_time = time.time()
+                            last_stop_command_time = 0
                             try:
                                 if panda_ws:
                                     await panda_ws.send(json.dumps({
@@ -988,10 +993,11 @@ async def update_limits_from_ws():
                                 log_event(f"[AUTO-ON-ERR] {e}", force_console=True)
 
                         fan_state = "ON" if bed_ist >= float(current_data.get("filtertemp", 30.0)) else "OFF"
+                        actual_heating = panda_running
 
                         mqtt_client.publish(
                             f"{MQTT_TOPIC_PREFIX}/heizung",
-                            "AN" if global_heating_state > 50 else "AUS",
+                            "AN" if actual_heating else "AUS",
                             retain=True
                         )
                         mqtt_client.publish(
@@ -1011,30 +1017,11 @@ async def update_limits_from_ws():
                         )
 
                         if DEBUG:
-                            now = time.time()
-
-                            current_live_log_state = (
-                                round(bed_ist, 1),
-                                round(target, 1),
-                                round(ist, 1),
-                                global_heating_state > 50,
-                                fan_state,
-                                work_mode_live,
-                                info
+                            log_event(
+                                f"LIVE | Bed:{bed_ist:.1f}°C | Kammer:{target:.1f}/{ist:.1f}°C | "
+                                f"Heizung:{'AN' if actual_heating else 'AUS'} | "
+                                f"Fan:{fan_state} | Modus:{work_mode_live} | Status:{info}"
                             )
-
-                            if (
-                                current_live_log_state != last_live_log_state
-                                or (now - last_live_log_time) >= 30
-                            ):
-                                last_live_log_state = current_live_log_state
-                                last_live_log_time = now
-
-                                log_event(
-                                    f"LIVE | Bed:{bed_ist:.1f}°C | Kammer:{target:.1f}/{ist:.1f}°C | "
-                                    f"Heizung:{'AN' if global_heating_state > 50 else 'AUS'} | "
-                                    f"Fan:{fan_state} | Modus:{work_mode_live} | Status:{info}"
-                                )
 
                     else:
                         continue
