@@ -672,7 +672,7 @@ async def update_limits_from_ws():
 
         # ===== NORMALER WS BETRIEB =====
         try:
-            async with websockets.connect(uri, ping_interval=20) as websocket:
+            async with websockets.connect(uri, ping_interval=None, close_timeout=1) as websocket:
 
                 log_event(f"[WS] Verbunden mit Panda {PANDA_IP}")
                 panda_ws = websocket
@@ -1041,7 +1041,9 @@ async def update_limits_from_ws():
 
         except Exception as e:
             if DEBUG:
-                log_event(f"WS-Error: {e}")
+                err = str(e)
+                if "no close frame received or sent" not in err:
+                    log_event(f"WS-Error: {err}")
 
             panda_ws = None
             await asyncio.sleep(5)
