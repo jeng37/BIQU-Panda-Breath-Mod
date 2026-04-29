@@ -121,6 +121,8 @@ terminal_cleared = False
 # Merkt sich den letzten vollständigen WS-Settings-Stand
 last_ws_settings = {}
 power_forced_off = False # Ergänzt für Logik-Vollständigkeit
+last_live_log_state = None
+last_live_log_time = 0
 
 # ============================================================
 # --- LOGGING SETUP (DEBUG / CRITICAL Umschaltbar) ---
@@ -626,6 +628,8 @@ def setup_mqtt_discovery():
 async def update_limits_from_ws():
     global panda_ws, bind_confirmed, bind_warning_shown
     global global_heating_state, last_switch_time
+    global last_live_log_state, last_live_log_time
+
     uri = f"ws://{PANDA_IP}/ws"
 
     while True:
@@ -1005,6 +1009,32 @@ async def update_limits_from_ws():
                             fan_state,
                             retain=True
                         )
+
+                        if DEBUG:
+                            now = time.time()
+
+                            current_live_log_state = (
+                                round(bed_ist, 1),
+                                round(target, 1),
+                                round(ist, 1),
+                                global_heating_state > 50,
+                                fan_state,
+                                work_mode_live,
+                                info
+                            )
+
+                            if (
+                                current_live_log_state != last_live_log_state
+                                or (now - last_live_log_time) >= 30
+                            ):
+                                last_live_log_state = current_live_log_state
+                                last_live_log_time = now
+
+                                log_event(
+                                    f"LIVE | Bed:{bed_ist:.1f}°C | Kammer:{target:.1f}/{ist:.1f}°C | "
+                                    f"Heizung:{'AN' if global_heating_state > 50 else 'AUS'} | "
+                                    f"Fan:{fan_state} | Modus:{work_mode_live} | Status:{info}"
+                                )
 
                     else:
                         continue
