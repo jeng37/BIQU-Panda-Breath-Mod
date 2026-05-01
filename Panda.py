@@ -23,6 +23,7 @@ heating_locked = False
 global_lock = False  # NEU: Sicherheits-Sperre für alle Modi
 global_heating_state = 20.0
 last_switch_time = 0
+last_stop_command_time = 0
 bed_sensor_error = False
 bind_confirmed = False
 bind_warning_shown = False
@@ -626,6 +627,7 @@ def setup_mqtt_discovery():
 async def update_limits_from_ws():
     global panda_ws, bind_confirmed, bind_warning_shown
     global global_heating_state, last_switch_time
+    global last_stop_command_time
     uri = f"ws://{PANDA_IP}/ws"
 
     while True:
@@ -1016,12 +1018,6 @@ async def update_limits_from_ws():
                             retain=True
                         )
 
-                        if DEBUG:
-                            log_event(
-                                f"LIVE | Bed:{bed_ist:.1f}°C | Kammer:{target:.1f}/{ist:.1f}°C | "
-                                f"Heizung:{'AN' if actual_heating else 'AUS'} | "
-                                f"Fan:{fan_state} | Modus:{work_mode_live} | Status:{info}"
-                            )
 
                     else:
                         continue
