@@ -16,6 +16,11 @@ This project simulates a **Bambu Lab printer** on a host system (PC / server) an
 
 <img width="526" height="780" src="https://github.com/user-attachments/assets/cb2ca112-8e07-41d9-a7cc-d286a7d684fa" />
 
+<img width="1261" height="953" alt="gui-1" src="https://github.com/user-attachments/assets/90471014-9753-4d1b-a004-66d0f439cf7d" />
+<img width="1261" height="953" alt="gui-2" src="https://github.com/user-attachments/assets/1188fb61-830d-4218-b6a7-e62999cfdc75" />
+<img width="1261" height="958" alt="gui-3" src="https://github.com/user-attachments/assets/73b04da5-b450-473a-af27-99695b913f9a" />
+
+
 ---
 
 # ✨ Key Features (v1.9.3)
@@ -255,9 +260,9 @@ python3 PandaGui.py
 
 Default script:
 
-~/Panda/Panda-1.py
+~/Panda/Panda.py
 📡 MQTT Configuration
-Broker: 192.168.8.195
+Broker: 192.168.x.xxx
 Port: 1883
 Topic prefix:
 panda_breath_mod
