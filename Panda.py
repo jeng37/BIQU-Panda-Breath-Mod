@@ -327,7 +327,7 @@ def on_mqtt_message(client, userdata, msg):
         async def stop_flow():
             if panda_ws:
                 # Wir schalten ALLES am Panda sofort aus
-                await panda_ws.send(json.dumps({"settings": {"isrunning": 0, "work_mode": 0, "work_on": 0}}))
+                await panda_ws.send(json.dumps({"settings": {"isrunning": 0, "work_on": False, "work_mode": 0, "set_temp": 0}}))
         
         asyncio.run_coroutine_threadsafe(stop_flow(), main_loop)
 
@@ -428,7 +428,7 @@ def on_mqtt_message(client, userdata, msg):
         async def p_flow():
             if panda_ws:
                 if not is_on:
-                    await panda_ws.send(json.dumps({"settings": {"isrunning": 0, "work_mode": 0}}))
+                    await panda_ws.send(json.dumps({"settings": {"isrunning": 0, "work_on": False, "work_mode": 0}}))
                 else:
                     await panda_ws.send(json.dumps({"settings": {"work_on": 1, "isrunning": 1}}))
         asyncio.run_coroutine_threadsafe(p_flow(), main_loop)
@@ -630,8 +630,7 @@ async def update_limits_from_ws():
     global panda_ws, bind_confirmed, bind_warning_shown
     global global_heating_state, last_switch_time
     global last_live_log_state, last_live_log_time
-    global last_stop_command_time  
-
+    global last_stop_command_time
     uri = f"ws://{PANDA_IP}/ws"
 
     while True:
@@ -641,7 +640,7 @@ async def update_limits_from_ws():
 
             try:
                 # Neue frische Verbindung erzwingen
-                async with websockets.connect(f"ws://{PANDA_IP}/ws") as ws:
+                async with websockets.connect(f"ws://{PANDA_IP}/ws", ping_interval=None, ping_timeout=None, close_timeout=1) as ws:
 
                     # 1️⃣ BIND (WICHTIG – sonst ignoriert Panda Befehle)
                     await ws.send(json.dumps({
@@ -657,7 +656,7 @@ async def update_limits_from_ws():
                     # 2️⃣ HARD POWER OFF (MASTER SWITCH!)
                     await ws.send(json.dumps({
                         "settings": {
-                            "work_on": 0,
+                            "work_on": False,
                             "work_mode": 0,
                             "set_temp": 0
                         }
@@ -957,21 +956,24 @@ async def update_limits_from_ws():
                         if target_state == 20.0:
                             now_stop = time.time()
 
-                            # Hysterese/Fertig/Standby darf NICHT work_mode oder set_temp ändern.
-                            # Es wird nur der aktive Heizlauf gestoppt.
-                            # Wenn der Panda weiterhin isrunning=1 meldet, wird der Stop-Befehl
-                            # alle 2 Sekunden erneut gesendet, bis der Panda wirklich stoppt.
+                            # V1.0.3 / Klipper bind:
+                            # isrunning=0 alleine reicht nicht mehr, weil die Panda-Firmware
+                            # im Klipper-Auto-Modus den Heizlauf selbst wieder starten kann.
+                            # Darum wird der aktive Lauf mit work_on=False pausiert.
+                            # WICHTIG: work_mode und set_temp bleiben unverändert, damit
+                            # Kammer-Soll und gewählter Modus NICHT verloren gehen.
                             if global_heating_state != 20.0:
                                 global_heating_state = 20.0
                                 last_switch_time = now_stop
 
-                            if panda_running and (now_stop - last_stop_command_time) >= 2.0:
+                            if (panda_running or work_on_live in (1, True, "1")) and (now_stop - last_stop_command_time) >= 2.0:
                                 last_stop_command_time = now_stop
                                 try:
                                     if panda_ws:
                                         await panda_ws.send(json.dumps({
                                             "settings": {
-                                                "isrunning": 0
+                                                "isrunning": 0,
+                                                "work_on": False
                                             }
                                         }))
                                 except Exception as e:
@@ -992,6 +994,7 @@ async def update_limits_from_ws():
                                     await panda_ws.send(json.dumps({
                                         "settings": {
                                             "work_on": True,
+                                            "set_temp": int(target),
                                             "isrunning": 1
                                         }
                                     }))
@@ -999,7 +1002,7 @@ async def update_limits_from_ws():
                                 log_event(f"[AUTO-ON-ERR] {e}", force_console=True)
 
                         fan_state = "ON" if bed_ist >= float(current_data.get("filtertemp", 30.0)) else "OFF"
-                        actual_heating = panda_running
+                        actual_heating = (panda_running and work_on_live in (1, True, "1"))
 
                         mqtt_client.publish(
                             f"{MQTT_TOPIC_PREFIX}/heizung",
@@ -1029,7 +1032,7 @@ async def update_limits_from_ws():
                                 round(bed_ist, 1),
                                 round(target, 1),
                                 round(ist, 1),
-                                global_heating_state > 50,
+                                actual_heating,
                                 fan_state,
                                 work_mode_live,
                                 info
@@ -1044,7 +1047,7 @@ async def update_limits_from_ws():
 
                                 log_event(
                                     f"LIVE | Bed:{bed_ist:.1f}°C | Kammer:{target:.1f}/{ist:.1f}°C | "
-                                    f"Heizung:{'AN' if global_heating_state > 50 else 'AUS'} | "
+                                    f"Heizung:{'AN' if actual_heating else 'AUS'} | "
                                     f"Fan:{fan_state} | Modus:{work_mode_live} | Status:{info}"
                                 )
 
