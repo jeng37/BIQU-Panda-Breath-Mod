@@ -306,7 +306,6 @@ Protocol: Telnet
 
 Example:
 
-```bash
 telnet mybbs.duckdns.org 2323
 ```
 
