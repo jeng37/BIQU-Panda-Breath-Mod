@@ -291,6 +291,7 @@ Use at your own risk.
 Always follow fire safety regulations when operating heated 3D printer enclosures.
 
 
+---
 
 ## 🕹️ Live Nostalgia BBS
 
@@ -298,7 +299,7 @@ Want to see this in action?
 
 Connect to the old-school PCBoard BBS:
 
-```
+```text
 Host: mybbs.duckdns.org
 Port: 2323
 Protocol: Telnet
@@ -306,6 +307,7 @@ Protocol: Telnet
 
 Example:
 
+```bash
 telnet mybbs.duckdns.org 2323
 ```
 
