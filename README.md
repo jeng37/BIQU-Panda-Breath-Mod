@@ -309,6 +309,7 @@ Example:
 
 ```bash
 telnet mybbs.duckdns.org 2323
+ssh bbs@mybbs.duckdns.org -p2222  (PW:bbs)
 ```
 
 Best experienced with an ANSI-capable terminal such as SyncTERM, ZOC, NetRunner, or any classic Telnet/ANSI client.
