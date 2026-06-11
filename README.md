@@ -301,14 +301,13 @@ Connect to the old-school PCBoard BBS:
 
 ```text
 Host: mybbs.duckdns.org
-Port: 2323
-Protocol: Telnet
+Port: 2222
+Protocol: ssh
 ```
 
 Example:
 
 ```bash
-telnet mybbs.duckdns.org 2323
 ssh bbs@mybbs.duckdns.org -p2222  (PW:bbs)
 ```
 
