@@ -293,24 +293,39 @@ Always follow fire safety regulations when operating heated 3D printer enclosure
 
 ---
 
-## 🕹️ Live Nostalgia BBS
+## 🕹️ Live bOX BBS
 
-Want to see this in action?
-
-Connect to the old-school PCBoard BBS:
+Want to see this project in action? Connect to my live old-school **PCBoard bOX BBS** over SSH.
 
 ```text
-Host: mybbs.duckdns.org
-Port: 2222
-Protocol: ssh
+Host:     mybbs.duckdns.org
+Port:     2222
+Protocol: SSH
+Login:    bbs
+Password: bbs
 ```
 
 Example:
 
 ```bash
-ssh bbs@mybbs.duckdns.org -p2222  (PW:bbs)
+ssh bbs@mybbs.duckdns.org -p 2222
 ```
 
-Best experienced with an ANSI-capable terminal such as SyncTERM, ZOC, NetRunner, or any classic Telnet/ANSI client.
+For the best ANSI/PCBoard experience, use the preconfigured SyncTERM package included in this repository:
 
-> Nostalgia mode: real old-style PCBoard BBS experience.
+```text
+syncterm/syncterm_v1.9.rc3_bOX_ALL_BUILDS.zip
+```
+
+Included builds:
+
+```text
+Win_x86
+Win_x64
+Linux_x86
+Linux_x64
+```
+
+The SyncTERM package is already configured for the bOX BBS. You can also connect with any ANSI-capable terminal such as SyncTERM, ZOC, NetRunner, PuTTY, or another classic Telnet/ANSI client.
+
+> Nostalgia mode: real old-school PCBoard BBS experience.
