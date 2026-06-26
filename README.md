@@ -251,6 +251,33 @@ runs a TLS server on port `8883` and the Panda Touch connects directly to the
 host's IP over WebSocket. With Docker's default bridge networking the Panda Touch
 cannot reach the container, so host networking is non-negotiable here.
 
+## Home Assistant Add-on
+
+If you run **Home Assistant OS** or **Supervised**, you can install this as a
+managed add-on instead of using `docker compose` — it shows up under
+**Settings → Add-ons** with a configuration UI.
+
+1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
+2. Add `https://github.com/jeng37/BIQU-Panda-Breath-Mod` and close.
+3. Install **Panda Breath Mod** from the store, fill in the options, and start it.
+
+Notes:
+
+- **MQTT credentials are auto-filled** from the Home Assistant MQTT integration —
+  leave the `MQTT_*` options blank unless you want to override them.
+- The add-on runs with **host networking** (`host_network: true`), required for the
+  same reason as `network_mode: host` above: the Panda Touch connects directly to
+  the host IP. MQTT *discovery* works regardless of network mode (it goes through
+  the broker), so entities appear automatically.
+- Certificates are auto-generated on first start into the add-on's persistent
+  storage (`/data/certs`).
+
+> HA **Container/Core** installs (HA running as a plain Docker container or in a
+> venv) have no Supervisor and cannot run add-ons — use the `docker compose` setup
+> above instead.
+
+See [`addon/DOCS.md`](addon/DOCS.md) for the full option reference.
+
 ---
 
 🔗 Binding

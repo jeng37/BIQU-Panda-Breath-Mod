@@ -1,0 +1,55 @@
+---
+name: Panda Breath Mod
+version: "1.0.0"
+slug: panda_breath
+description: >-
+  Intelligent chamber-heater control for the BIQU Panda Breath. Emulates a
+  Bambu printer for the Panda Touch and syncs with Home Assistant over MQTT.
+url: https://github.com/jeng37/BIQU-Panda-Breath-Mod
+arch:
+  - aarch64
+  - amd64
+  - armv7
+# host_network is REQUIRED: the add-on runs a TLS server on 0.0.0.0:8883 and the
+# Panda Touch connects directly to the host IP over WebSocket. Bridge networking
+# would make the Panda Touch unable to reach the add-on.
+host_network: true
+init: false
+# Pull MQTT broker host/port/user/password from the HA MQTT integration so the
+# user does not have to retype broker credentials.
+services:
+  - mqtt:want
+# Persistent cert storage lives in /data (the add-on's own volume); no extra map
+# needed. addon_config is mapped rw in case the user wants to inspect logs there.
+map:
+  - addon_config:rw
+options:
+  PANDA_IP: ""
+  PANDA_SN: ""
+  PANDA_ACCESS_CODE: ""
+  HOST_IP: ""
+  HA_TOKEN: ""
+  HA_SENSOR_URL: ""
+  MQTT_TOPIC_PREFIX: panda_breath_mod
+  PRINTER_IP: ""
+  MQTT_BROKER: ""
+  MQTT_PORT: 1883
+  MQTT_USER: ""
+  MQTT_PASSWORD: ""
+  HYSTERESE: 1.5
+  DEBUG: false
+schema:
+  PANDA_IP: str
+  PANDA_SN: str
+  PANDA_ACCESS_CODE: str
+  HOST_IP: str
+  HA_TOKEN: str
+  HA_SENSOR_URL: "str?"
+  MQTT_TOPIC_PREFIX: str
+  PRINTER_IP: "str?"
+  MQTT_BROKER: "str?"
+  MQTT_PORT: port
+  MQTT_USER: "str?"
+  MQTT_PASSWORD: "password?"
+  HYSTERESE: float
+  DEBUG: bool
