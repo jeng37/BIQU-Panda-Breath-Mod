@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import asyncio, ssl, json, time, requests, websockets, os
+import asyncio, ssl, json, time, requests, websockets, os, sys
 import logging
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
@@ -34,27 +34,66 @@ desired_power_state = None           # None / True / False
 power_pending_until = 0.0
 POWER_CONFIRM_TIMEOUT = 6.0          # Sekunden warten, bis WS "work_on" nachzieht
 # ==========================================
-# KONFIGURATION - JSON (panda_config.json)
+# KONFIGURATION - ENV + JSON (panda_config.json)
 # ==========================================
+# Konfiguration kommt aus Umgebungsvariablen (z.B. via Docker config.env) UND/ODER
+# aus panda_config.json. Umgebungsvariablen haben Vorrang, panda_config.json bleibt
+# als Fallback erhalten -> der bisherige Standalone-Betrieb (nur JSON) funktioniert
+# unverändert weiter, und der Docker-Betrieb (nur Env) braucht keine JSON-Datei.
 CONFIG_PATH = BASE_DIR / "panda_config.json"
 
-with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-    CONFIG = json.load(f)
+try:
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        CONFIG = json.load(f)
+except FileNotFoundError:
+    # Kein JSON vorhanden (z.B. Docker-Betrieb): rein über Env konfigurieren.
+    CONFIG = {}
+
+
+def _cfg(*names, default=None, cast=None):
+    """Wert aus Env (Vorrang) oder panda_config.json holen.
+
+    Mehrere Namen erlauben das Mappen der Docker-Variablennamen (config.env)
+    auf die internen JSON-Schlüssel. Der erste gesetzte/nicht-leere Treffer
+    gewinnt; Env wird vor JSON geprüft.
+    """
+    for name in names:
+        val = os.environ.get(name)
+        if val is not None and val != "":
+            return cast(val) if cast else val
+    for name in names:
+        if name in CONFIG and CONFIG[name] not in (None, ""):
+            val = CONFIG[name]
+            return cast(val) if cast else val
+    return default
+
+
+def _cfg_bool(*names, default=False):
+    val = _cfg(*names)
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() in ("1", "true", "yes", "on")
+
 
 # Konsolen-Ausgabe: True zeigt detaillierte MQTT-Befehle im Terminal, False hält es sauber.
-DEBUG = CONFIG["DEBUG"]
+DEBUG = _cfg_bool("DEBUG", default=False)
 # Logging: True speichert alle Ereignisse (Verbindungen, Fehler, Sync) in 'panda_debug.log'.
-DEBUG_TO_FILE = CONFIG["DEBUG_TO_FILE"]
+DEBUG_TO_FILE = _cfg_bool("DEBUG_TO_FILE", default=True)
 # Schaltschwelle: Temperatur muss um diesen Wert unter 'Soll' fallen, bevor wieder geheizt wird.
-HYSTERESE = CONFIG["HYSTERESE"]
+HYSTERESE = _cfg("HYSTERESE", default=1.5, cast=float)
 # Schutzzeit: Mindestpause (in Sek.) zwischen zwei Schaltvorgängen, um die Hardware zu schonen.
-MIN_SWITCH_TIME = CONFIG["MIN_SWITCH_TIME"]
+MIN_SWITCH_TIME = _cfg("MIN_SWITCH_TIME", default=10, cast=int)
 # MQTT Broker Adresse: Die IP-Adresse deines Home Assistant oder MQTT-Servers.
-MQTT_BROKER = CONFIG["MQTT_BROKER"]
+MQTT_BROKER = _cfg("MQTT_BROKER")
+# MQTT Port: Standard 1883.
+MQTT_PORT = _cfg("MQTT_PORT", default=1883, cast=int)
 # MQTT Benutzername: In HA unter Einstellungen -> Personen -> Benutzer angelegt.
-MQTT_USER = CONFIG["MQTT_USER"]
+MQTT_USER = _cfg("MQTT_USER")
 # MQTT Passwort: Das zugehörige Passwort für den MQTT-Benutzer.
-MQTT_PASS = CONFIG["MQTT_PASS"]
+# Docker-Variablenname MQTT_PASSWORD, intern/JSON weiterhin MQTT_PASS.
+MQTT_PASS = _cfg("MQTT_PASSWORD", "MQTT_PASS")
 
 # MQTT Präfix: Die Basis für alle Topics (z.B. panda_breath_mod/soll).
 # ⚠️ WICHTIG: Deine Screenshots zeigen entity_ids wie:
@@ -62,22 +101,52 @@ MQTT_PASS = CONFIG["MQTT_PASS"]
 # - switch.panda_breath_mod_slicer_priority_mode
 # - sensor.panda_breath_mod_slicer_target_temp
 # Darum MUSS der Prefix "panda_breath_mod" sein, sonst passt HA/YAML nicht.
-MQTT_TOPIC_PREFIX = CONFIG["MQTT_TOPIC_PREFIX"]
+MQTT_TOPIC_PREFIX = _cfg("MQTT_TOPIC_PREFIX", default="panda_breath_mod")
 
 # Host IP: Die statische IP-Adresse des Rechners, auf dem dieses Skript läuft.
-HOST_IP = CONFIG["HOST_IP"]
+HOST_IP = _cfg("HOST_IP")
 # Panda IP: Die IP-Adresse deines Panda Touch Displays im WLAN.
-PANDA_IP = CONFIG["PANDA_IP"]
+PANDA_IP = _cfg("PANDA_IP")
 # Seriennummer: Die SN deines Druckers (findest du in der Panda-UI oder auf dem Sticker).
-PRINTER_SN = CONFIG["PRINTER_SN"]
+# Docker-Variablenname PANDA_SN, intern/JSON weiterhin PRINTER_SN.
+PRINTER_SN = _cfg("PANDA_SN", "PRINTER_SN")
 # Access Code: Der Sicherheitscode deines Druckers für die WebSocket-Verbindung.
-ACCESS_CODE = CONFIG["ACCESS_CODE"]
+# Docker-Variablenname PANDA_ACCESS_CODE, intern/JSON weiterhin ACCESS_CODE.
+ACCESS_CODE = _cfg("PANDA_ACCESS_CODE", "ACCESS_CODE")
 # HA Bett-Temperatur Entität: Hier nur die Entity-ID ändern, falls dein Sensor anders heißt.
-HA_BED_TEMPERATURE_ENTITY = CONFIG["HA_BED_TEMPERATURE_ENTITY"]
+HA_BED_TEMPERATURE_ENTITY = _cfg("HA_BED_TEMPERATURE_ENTITY")
 # HA API URL: Link zum Bett-Temperatur-Sensor deines Druckers in Home Assistant.
-HA_URL = CONFIG["HA_URL"] if CONFIG.get("HA_URL") else f'{CONFIG["HA_BASE_URL"]}/api/states/{HA_BED_TEMPERATURE_ENTITY}'
+# Docker-Variablenname HA_SENSOR_URL, intern/JSON weiterhin HA_URL. Fallback wie
+# bisher: aus HA_BASE_URL + Entity zusammensetzen.
+HA_URL = _cfg("HA_SENSOR_URL", "HA_URL")
+if not HA_URL:
+    _ha_base = _cfg("HA_BASE_URL")
+    if _ha_base and HA_BED_TEMPERATURE_ENTITY:
+        HA_URL = f"{_ha_base}/api/states/{HA_BED_TEMPERATURE_ENTITY}"
 # HA Token: Ein 'Long-Lived Access Token' (erstellt im HA-Profil ganz unten).
-HA_TOKEN = CONFIG["HA_TOKEN"]
+HA_TOKEN = _cfg("HA_TOKEN")
+
+# SSL-Zertifikatspfade: Im Docker liegen diese persistent unter /certs, standalone
+# weiterhin neben Panda.py (cert.pem / key.pem).
+CERT_PATH = _cfg("CERT_PATH", default=str(BASE_DIR / "cert.pem"))
+KEY_PATH = _cfg("KEY_PATH", default=str(BASE_DIR / "key.pem"))
+
+# Startup-Check: Pflichtvariablen müssen gesetzt sein, sonst klare Fehlermeldung.
+_REQUIRED = {
+    "MQTT_BROKER": MQTT_BROKER,
+    "PANDA_IP": PANDA_IP,
+    "PANDA_SN (PRINTER_SN)": PRINTER_SN,
+    "PANDA_ACCESS_CODE (ACCESS_CODE)": ACCESS_CODE,
+}
+_missing = [name for name, val in _REQUIRED.items() if not val]
+if _missing:
+    print(
+        "❌ Konfigurationsfehler: Folgende Pflichtwerte fehlen "
+        "(als Umgebungsvariable in config.env oder in panda_config.json setzen):\n  - "
+        + "\n  - ".join(_missing),
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 # ============================================================
 # ✅ SLICER MODE (NEU)
@@ -86,7 +155,7 @@ HA_TOKEN = CONFIG["HA_TOKEN"]
 # Funktion: liest beim Druckstart die ersten Bytes der Gcode Datei,
 # sucht M191 Sxx / M141 Sxx und setzt slicer_soll.
 # ============================================================
-PRINTER_IP = CONFIG["PRINTER_IP"]
+PRINTER_IP = _cfg("PRINTER_IP")
 # ==========================================
 # current_data nutzt jetzt die exakten Namen aus der Hardware (filament_temp/timer)
 current_data = {
@@ -542,7 +611,7 @@ def setup_mqtt():
     client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, client_id=f"PandaNative_{PRINTER_SN}")
     client.username_pw_set(MQTT_USER, MQTT_PASS)
     client.on_message = on_mqtt_message
-    client.connect(MQTT_BROKER, 1883, 60)
+    client.connect(MQTT_BROKER, MQTT_PORT, 60)
     client.subscribe(f"{MQTT_TOPIC_PREFIX}/#")
     client.loop_start()
     return client
@@ -1292,7 +1361,7 @@ async def main():
     asyncio.create_task(update_limits_from_ws())
     asyncio.create_task(slicer_auto_parser())
     ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    ssl_ctx.load_cert_chain(certfile=str(BASE_DIR / "cert.pem"), keyfile=str(BASE_DIR / "key.pem"))
+    ssl_ctx.load_cert_chain(certfile=CERT_PATH, keyfile=KEY_PATH)
     
     # ✅ OPTIMIERUNG: SECLEVEL=0 für Panda Touch Kompatibilität (Legacy TLS)
     ssl_ctx.set_ciphers('DEFAULT@SECLEVEL=0:ALL')

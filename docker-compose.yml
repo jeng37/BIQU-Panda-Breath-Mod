@@ -1,0 +1,16 @@
+services:
+  panda-breath:
+    build: .
+    container_name: panda-breath
+    restart: unless-stopped
+    # network_mode: host ist erforderlich, damit der TLS-Server (Port 8883) und die
+    # WebSocket-Verbindung zum Panda Touch funktionieren. Der Panda Touch verbindet
+    # sich direkt auf die Host-IP – mit Bridge-Networking wäre er nicht erreichbar.
+    network_mode: host
+    env_file:
+      - ./config.env
+    volumes:
+      # Persistente Zertifikatsablage – werden beim ersten Start automatisch erzeugt.
+      - ./certs:/certs
+      # Konfiguration (zusätzlich zu env_file auch im Container sichtbar).
+      - ./config.env:/app/config.env

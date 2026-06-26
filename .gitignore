@@ -2,3 +2,11 @@
 .README.remote.tmp
 .README.remote.bak
 
+# Docker / lokale Konfiguration und Secrets
+config.env
+certs/
+*.pem
+__pycache__/
+*.pyc
+panda_debug.log
+

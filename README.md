@@ -190,6 +190,69 @@ Panda (IP, SN, Access Code)
 Home Assistant (Token, Sensor URL)
 ▶ Start
 sudo python3 Panda.py
+
+---
+
+# 🐳 Docker
+
+Run the backend as a container instead of `sudo python3 Panda.py`. Certificates
+are generated automatically on first run and config comes from a `config.env`
+file.
+
+## Quick Start
+
+```bash
+git clone https://github.com/jeng37/BIQU-Panda-Breath-Mod.git
+cd BIQU-Panda-Breath-Mod
+
+# 1. Create your config from the template
+cp config.env.example config.env
+nano config.env          # fill in the values (see below)
+
+# 2. Build and start
+docker compose up -d --build
+
+# 3. Follow the logs
+docker compose logs -f
+```
+
+## Configuration (`config.env`)
+
+All settings come from `config.env` (loaded via `env_file` in
+`docker-compose.yml`). At minimum you must set:
+
+| Variable | Description |
+| --- | --- |
+| `MQTT_BROKER` | IP/hostname of your MQTT broker (Home Assistant) |
+| `MQTT_PORT` | MQTT port (default `1883`) |
+| `MQTT_USER` / `MQTT_PASSWORD` | MQTT credentials |
+| `PANDA_IP` | IP of the Panda Touch display |
+| `PANDA_SN` | Printer serial number |
+| `PANDA_ACCESS_CODE` | Printer access code |
+| `HOST_IP` | IP of the host running the container (enter this as *Printer IP* in the Panda UI) |
+| `HA_TOKEN` | Home Assistant long-lived access token |
+| `HA_SENSOR_URL` | Full URL to the bed-temperature sensor, e.g. `http://homeassistant.local:8123/api/states/sensor.ks1c_bed_temperature` |
+
+See `config.env.example` for the full list (including optional values like
+`HYSTERESE`, `DEBUG`, and `PRINTER_IP`). Environment variables override
+`panda_config.json`, so the existing standalone setup keeps working unchanged.
+
+## Certificates
+
+The TLS certificates (`cert.pem` / `key.pem`) are **generated automatically on
+first run** into `./certs/` (mounted as `/certs` in the container) using the same
+parameters as `cert_gen.sh`. They persist across restarts and rebuilds. To force
+regeneration, delete `./certs/` and restart the container.
+
+## `network_mode: host`
+
+The compose file uses `network_mode: host` — this is **required**. The container
+runs a TLS server on port `8883` and the Panda Touch connects directly to the
+host's IP over WebSocket. With Docker's default bridge networking the Panda Touch
+cannot reach the container, so host networking is non-negotiable here.
+
+---
+
 🔗 Binding
 
 Open:
