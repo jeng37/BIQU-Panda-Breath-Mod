@@ -17,7 +17,7 @@ Assistant via MQTT discovery.
 
 1. In Home Assistant go to **Settings → Add-ons → Add-on Store**.
 2. Open the **⋮** menu (top right) → **Repositories**.
-3. Add `https://github.com/jeng37/BIQU-Panda-Breath-Mod` and close.
+3. Add `https://github.com/bdavj/BIQU-Panda-Breath-Mod` and close.
 4. Find **Panda Breath Mod** in the store and click **Install**.
 
 ## Configuration

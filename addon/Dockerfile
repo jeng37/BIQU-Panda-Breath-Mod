@@ -17,7 +17,7 @@ WORKDIR /app
 # build context is the add-on folder, so we cannot COPY ../Panda.py. SOURCE_REF can
 # be overridden to pin a tag/branch.
 ARG SOURCE_REF=main
-ADD "https://raw.githubusercontent.com/jeng37/BIQU-Panda-Breath-Mod/${SOURCE_REF}/Panda.py" /app/Panda.py
+ADD "https://raw.githubusercontent.com/bdavj/BIQU-Panda-Breath-Mod/${SOURCE_REF}/Panda.py" /app/Panda.py
 
 COPY run.sh /
 RUN chmod a+x /run.sh

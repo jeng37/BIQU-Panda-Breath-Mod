@@ -160,7 +160,7 @@ When **Slicer Priority Mode = ON**:
 
 ## 1. Clone
 ```bash
-git clone https://github.com/jeng37/BIQU-Panda-Breath-Mod.git
+git clone https://github.com/bdavj/BIQU-Panda-Breath-Mod.git
 cd BIQU-Panda-Breath-Mod
 2. Install Dependencies
 sudo apt update
@@ -202,7 +202,7 @@ file.
 ## Quick Start
 
 ```bash
-git clone https://github.com/jeng37/BIQU-Panda-Breath-Mod.git
+git clone https://github.com/bdavj/BIQU-Panda-Breath-Mod.git
 cd BIQU-Panda-Breath-Mod
 
 # 1. Create your config from the template
@@ -258,7 +258,7 @@ managed add-on instead of using `docker compose` — it shows up under
 **Settings → Add-ons** with a configuration UI.
 
 1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
-2. Add `https://github.com/jeng37/BIQU-Panda-Breath-Mod` and close.
+2. Add `https://github.com/bdavj/BIQU-Panda-Breath-Mod` and close.
 3. Install **Panda Breath Mod** from the store, fill in the options, and start it.
 
 Notes:

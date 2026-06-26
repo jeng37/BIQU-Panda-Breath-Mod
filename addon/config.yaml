@@ -5,7 +5,7 @@ slug: panda_breath
 description: >-
   Intelligent chamber-heater control for the BIQU Panda Breath. Emulates a
   Bambu printer for the Panda Touch and syncs with Home Assistant over MQTT.
-url: https://github.com/jeng37/BIQU-Panda-Breath-Mod
+url: https://github.com/bdavj/BIQU-Panda-Breath-Mod
 arch:
   - aarch64
   - amd64
