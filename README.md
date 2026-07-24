@@ -1,5 +1,5 @@
 <!-- REPO_VIEWS_BADGE_START -->
-![Repository Views](https://img.shields.io/badge/Repository%20Views-11426-blue?style=flat-square)
+![Repository Views](https://img.shields.io/badge/Repository%20Views-11479-blue?style=flat-square)
 <!-- REPO_VIEWS_BADGE_END -->
 
 # BIQU Panda Breath Mod 🚀
