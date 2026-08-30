@@ -16,7 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # - Entfernt NICHTS: Original bleibt, Erweiterungen sind additiv/ersetzend innerhalb
 #   der bestehenden Struktur (nur ergänzt/erweitert).
 # ============================================================
-PANDA_VERSION = "v1.9.2"
+PANDA_VERSION = "v1.9.4"
 last_reported_mode = None
 mode_change_hint = ""
 heating_locked = False
@@ -33,6 +33,9 @@ bind_warning_shown = False
 desired_power_state = None           # None / True / False
 power_pending_until = 0.0
 POWER_CONFIRM_TIMEOUT = 6.0          # Sekunden warten, bis WS "work_on" nachzieht
+# Letzten echten Modus merken, damit Master OFF -> ON den Modus wiederherstellt.
+# 1=Auto ist der sichere Default, falls noch nie ein aktiver Modus gesehen wurde.
+last_active_work_mode = 1
 # ==========================================
 # KONFIGURATION - JSON (panda_config.json)
 # ==========================================
@@ -124,6 +127,65 @@ terminal_cleared = False
 # Merkt sich den letzten vollständigen WS-Settings-Stand
 last_ws_settings = {}
 power_forced_off = False # Ergänzt für Logik-Vollständigkeit
+
+# ============================================================
+# Panda Breath Firmware-Kompatibilität
+# ------------------------------------------------------------
+# FW <= 1.0.3: bestehendes Backend-Verhalten bleibt unverändert.
+# FW >= 1.0.4: das WebSocket-Protokoll liefert work_on/work_mode nur
+# im initialen Full-Settings-Frame. Außerdem ist isrunning laut der
+# 1.0.4-WebUI/Protokollbeobachtung der Drying-Countdown und KEIN
+# zuverlässiges Heizungs-Flag. Deshalb verwalten wir bei 1.0.4+ den
+# Modus/Power-Zustand optimistisch im Shadow-State und verwenden
+# isrunning nur noch dort, wo Drying tatsächlich betroffen ist.
+# ============================================================
+panda_fw_version = "unknown"
+panda_fw_tuple = (0, 0, 0)
+panda_fw_104_plus = False
+
+def _parse_fw_version(value):
+    text = str(value or "").strip().lower()
+    if text.startswith("v"):
+        text = text[1:]
+    nums = []
+    for part in text.split("."):
+        digits = "".join(ch for ch in part if ch.isdigit())
+        if not digits:
+            break
+        nums.append(int(digits))
+        if len(nums) == 3:
+            break
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums[:3])
+
+def _set_panda_fw(value):
+    global panda_fw_version, panda_fw_tuple, panda_fw_104_plus
+    new_text = str(value or "unknown").strip()
+    new_tuple = _parse_fw_version(new_text)
+    changed = (new_text != panda_fw_version)
+    panda_fw_version = new_text
+    panda_fw_tuple = new_tuple
+    panda_fw_104_plus = new_tuple >= (1, 0, 4)
+    if changed:
+        proto = "FW1.0.4+" if panda_fw_104_plus else "Legacy<=1.0.3"
+        log_event(
+            f"[FW] Panda Breath {panda_fw_version} erkannt -> Protokollmodus {proto}",
+            force_console=True
+        )
+
+def _settings_for_fw(settings, *, dry=False):
+    """Kopie der Settings passend zur erkannten Panda-Firmware.
+
+    Bei FW 1.0.4+ ist isrunning kein Heizungsstatus, sondern gehört
+    zum Filament-Drying-Ablauf. Für Auto/Manuell/Power entfernen wir
+    es daher; Dry-Commands behalten es. Legacy-Firmware erhält die
+    bisherigen Felder unverändert.
+    """
+    payload = dict(settings)
+    if panda_fw_104_plus and not dry:
+        payload.pop("isrunning", None)
+    return payload
 
 # ============================================================
 # --- LOGGING SETUP (DEBUG / CRITICAL Umschaltbar) ---
@@ -246,6 +308,7 @@ def on_mqtt_message(client, userdata, msg):
     global desired_power_state
     global power_pending_until
     global global_heating_state
+    global last_active_work_mode
 
     # ============================================================
     # ✅ RETAINED MQTT STATE RESTORE
@@ -335,11 +398,11 @@ def on_mqtt_message(client, userdata, msg):
                 })
                 asyncio.run_coroutine_threadsafe(
                     panda_ws.send(json.dumps({
-                        "settings": {
+                        "settings": _settings_for_fw({
                             "set_temp": int(slicer_val),
                             "work_on": 1,
                             "isrunning": 1
-                        }
+                        })
                     })),
                     main_loop
                 )
@@ -390,6 +453,7 @@ def on_mqtt_message(client, userdata, msg):
         log_event(">>> MANUELL MODE ENTERED <<<", force_console=True)
         heating_locked = False
         power_forced_off = False
+        last_active_work_mode = 2
         
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Manuell", retain=True)
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode", "OFF", retain=True)
@@ -410,12 +474,12 @@ def on_mqtt_message(client, userdata, msg):
                 mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/soll", manual_target, retain=True)
 
                 await panda_ws.send(json.dumps({
-                    "settings": {
+                    "settings": _settings_for_fw({
                         "work_mode": 2,
                         "work_on": True,
                         "set_temp": manual_target,
                         "isrunning": 1
-                    }
+                    })
                 }))
                 last_ws_settings.update({
                     "work_mode": 2,
@@ -432,6 +496,7 @@ def on_mqtt_message(client, userdata, msg):
         log_event(">>> AUTO MODE ENTERED <<<", force_console=True)
         heating_locked = False
         power_forced_off = False
+        last_active_work_mode = 1
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Automatik", retain=True)
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_power", "ON", retain=True)
         current_data["slicer_priority_mode"] = False
@@ -465,19 +530,29 @@ def on_mqtt_message(client, userdata, msg):
                     and auto_ist < (auto_target - HYSTERESE)
                 )
 
-                await panda_ws.send(json.dumps({
-                    "settings": {
+                # FW 1.0.4+: work_on ist MASTER ENABLE und darf in Auto NICHT
+                # als Heizrelais missbraucht werden. Der Panda entscheidet in Mode 1
+                # selbst anhand hotbedtemp/set_temp, ob tatsächlich geheizt wird.
+                # Legacy <=1.0.3 behält die bisher bewährte No-Pulse-Logik.
+                auto_work_on = True if panda_fw_104_plus else bool(should_run)
+
+                auto_payload = {
+                    "settings": _settings_for_fw({
                         "work_mode": 1,
-                        "work_on": bool(should_run),
+                        "work_on": auto_work_on,
                         "set_temp": auto_target,
                         "isrunning": 1 if should_run else 0
-                    },
-                    "ui_action": "auto"
-                }))
+                    })
+                }
+                # ui_action war Bestandteil unseres 1.0.3-Workarounds.
+                # 1.0.4 spricht sauber über settings und braucht das Feld nicht.
+                if not panda_fw_104_plus:
+                    auto_payload["ui_action"] = "auto"
+                await panda_ws.send(json.dumps(auto_payload))
 
                 last_ws_settings.update({
                     "work_mode": 1,
-                    "work_on": bool(should_run),
+                    "work_on": auto_work_on,
                     "set_temp": auto_target,
                     "isrunning": 1 if should_run else 0
                 })
@@ -500,6 +575,7 @@ def on_mqtt_message(client, userdata, msg):
 
         heating_locked = False
         power_forced_off = False
+        last_active_work_mode = 3
 
         mqtt_client.publish(
             f"{MQTT_TOPIC_PREFIX}/panda_modus",
@@ -530,18 +606,51 @@ def on_mqtt_message(client, userdata, msg):
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/work_on/set":
         payload = msg.payload.decode().strip().lower()
         is_on = payload in ("on", "1", "true")
+
+        current_mode = int(last_ws_settings.get("work_mode", 0) or 0)
+        if current_mode in (1, 2, 3):
+            last_active_work_mode = current_mode
+
         if is_on:
-            last_ws_settings.update({"work_on": True, "isrunning": 1})
+            restore_mode = last_active_work_mode if last_active_work_mode in (1, 2, 3) else 1
+            last_ws_settings.update({"work_mode": restore_mode, "work_on": True, "isrunning": 1})
         else:
             last_ws_settings.update({"isrunning": 0, "work_on": False, "work_mode": 0})
+
         async def p_flow():
             if panda_ws:
                 if not is_on:
-                    await panda_ws.send(json.dumps({"settings": {"isrunning": 0, "work_on": False, "work_mode": 0}}))
+                    await panda_ws.send(json.dumps({
+                        "settings": _settings_for_fw({"isrunning": 0, "work_on": False, "work_mode": 0})
+                    }))
                 else:
-                    await panda_ws.send(json.dumps({"settings": {"work_on": 1, "isrunning": 1}}))
+                    restore_mode = last_active_work_mode if last_active_work_mode in (1, 2, 3) else 1
+                    await panda_ws.send(json.dumps({
+                        "settings": _settings_for_fw({
+                            "work_mode": restore_mode,
+                            "work_on": True,
+                            "set_temp": int(float(current_data.get("kammer_soll", 45) or 45)),
+                            "isrunning": 1
+                        })
+                    }))
+
         asyncio.run_coroutine_threadsafe(p_flow(), main_loop)
         mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/work_on", "1" if is_on else "0", retain=True)
+
+        if is_on:
+            mode_names = {1: "Automatik", 2: "Manuell", 3: "Dry"}
+            mqtt_client.publish(
+                f"{MQTT_TOPIC_PREFIX}/panda_modus",
+                mode_names.get(last_active_work_mode, "Automatik"),
+                retain=True
+            )
+            log_event(
+                f">>> WORK ON | Mode {last_active_work_mode} wiederhergestellt <<<",
+                force_console=True
+            )
+        else:
+            mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/panda_modus", "Standby", retain=True)
+            log_event(">>> WORK OFF <<<", force_console=True)
         return
         
     # PANDA POWER SWITCH
@@ -565,6 +674,12 @@ def on_mqtt_message(client, userdata, msg):
             log_event(">>> PANDA POWER OFF <<<", force_console=True)
             heating_locked = True
             power_forced_off = True
+
+            # Aktiven Modus merken, BEVOR wir auf Standby/0 gehen.
+            current_mode = int(last_ws_settings.get("work_mode", 0) or 0)
+            if current_mode in (1, 2, 3):
+                last_active_work_mode = current_mode
+
             last_ws_settings.update({"isrunning": 0, "work_mode": 0, "work_on": False})
 
             async def hard_power_off():
@@ -595,16 +710,35 @@ def on_mqtt_message(client, userdata, msg):
             return
 
         else:
-            log_event(">>> PANDA POWER ON <<<", force_console=True)
+            restore_mode = last_active_work_mode if last_active_work_mode in (1, 2, 3) else 1
+            log_event(
+                f">>> PANDA POWER ON | Mode {restore_mode} wiederhergestellt <<<",
+                force_console=True
+            )
             heating_locked = False
             power_forced_off = False
-            last_ws_settings.update({"work_on": True})
+            last_ws_settings.update({"work_mode": restore_mode, "work_on": True})
+
+            mode_names = {1: "Automatik", 2: "Manuell", 3: "Dry"}
+            mqtt_client.publish(
+                f"{MQTT_TOPIC_PREFIX}/panda_modus",
+                mode_names.get(restore_mode, "Automatik"),
+                retain=True
+            )
 
             async def power_on():
                 try:
                     if panda_ws:
-                        # ON als bool True
-                        await panda_ws.send(json.dumps({"settings": {"work_on": True}}))
+                        # FW1.0.4 braucht nach unserem OFF (work_mode=0) beim ON
+                        # wieder einen gueltigen Modus. Nur work_on=True reicht nicht.
+                        await panda_ws.send(json.dumps({
+                            "settings": _settings_for_fw({
+                                "work_mode": restore_mode,
+                                "work_on": True,
+                                "set_temp": int(float(current_data.get("kammer_soll", 45) or 45)),
+                                "isrunning": 1
+                            })
+                        }))
                         await asyncio.sleep(0.2)
                 except Exception as e:
                     log_event(f"[POWER-ON-ERR] {e}")
@@ -751,6 +885,8 @@ async def update_limits_from_ws():
     global global_heating_state, last_switch_time
     global last_live_log_state, last_live_log_time
     global last_stop_command_time
+    global panda_fw_version, panda_fw_tuple, panda_fw_104_plus
+    global last_active_work_mode
     uri = f"ws://{PANDA_IP}/ws"
 
     while True:
@@ -835,14 +971,22 @@ async def update_limits_from_ws():
 
                     # NEU: fw_version extrahieren und publishen falls vorhanden
                         if 'fw_version' in incoming_settings:
+                            fw_value = str(incoming_settings['fw_version'])
+                            _set_panda_fw(fw_value)
                             mqtt_client.publish(
                                 f"{MQTT_TOPIC_PREFIX}/fw_version",
-                                str(incoming_settings['fw_version']),
+                                fw_value,
                                 retain=True
                             )
 
                         last_ws_settings.update(incoming_settings)
                         s = last_ws_settings
+
+                        # Letzten echten aktiven Modus aus einem Full-Settings-Frame merken.
+                        # FW1.0.4 sendet work_mode spaeter nicht erneut, daher Shadow-State behalten.
+                        incoming_mode = int(incoming_settings.get("work_mode", 0) or 0)
+                        if incoming_mode in (1, 2, 3):
+                            last_active_work_mode = incoming_mode
 
                         # Ist-Temperatur
                         if 'warehouse_temper' in incoming_settings:
@@ -918,6 +1062,13 @@ async def update_limits_from_ws():
 
                         if 'filament_timer' in s:
                             current_data["filament_timer"] = int(s['filament_timer'])
+
+                        # FW 1.0.4 benennt die Custom-Dry-Werte als
+                        # custom_temp/custom_timer. Legacy-Namen bleiben erhalten.
+                        if 'custom_temp' in s:
+                            current_data["filament_temp"] = int(s['custom_temp'])
+                        if 'custom_timer' in s:
+                            current_data["filament_timer"] = int(s['custom_timer'])
 
                         # ===== MODUS =====
                         global last_reported_mode, mode_change_hint
@@ -1003,6 +1154,19 @@ async def update_limits_from_ws():
                                     int(s['filament_timer']),
                                     retain=True
                                 )
+                            elif 'custom_timer' in s:
+                                mqtt_client.publish(
+                                    f"{MQTT_TOPIC_PREFIX}/dry_time",
+                                    int(s['custom_timer']),
+                                    retain=True
+                                )
+
+                            if 'filament_temp' not in s and 'custom_temp' in s:
+                                mqtt_client.publish(
+                                    f"{MQTT_TOPIC_PREFIX}/dry_temp",
+                                    int(s['custom_temp']),
+                                    retain=True
+                                )
 
                             mqtt_client.publish(
                                 f"{MQTT_TOPIC_PREFIX}/slicer_priority_mode",
@@ -1034,7 +1198,12 @@ async def update_limits_from_ws():
                         bed_ist = float(current_data.get("bed_temp", 0))
                         work_mode_live = int(s.get("work_mode", 0) or 0)
                         work_on_live = s.get("work_on")
-                        panda_running = s.get("isrunning") in (1, True, "1")
+                        # FW1.0.4+: isrunning ist Drying-Countdown, nicht Heizung.
+                        # Für Auto/Manuell ist work_on unser Command-/Shadow-State.
+                        if panda_fw_104_plus and work_mode_live in (1, 2):
+                            panda_running = work_on_live in (1, True, "1")
+                        else:
+                            panda_running = s.get("isrunning") in (1, True, "1")
 
                         if global_lock:
                             target_state, info = 20.0, "LOCKED"
@@ -1073,62 +1242,103 @@ async def update_limits_from_ws():
 
                         time_passed = (time.time() - last_switch_time)
 
-                        if target_state == 20.0:
-                            now_stop = time.time()
+                        # FW 1.0.4+: work_on ist MASTER ENABLE, nicht der Heizstab.
+                        # In Auto/Manuell lassen wir work_on deshalb dauerhaft AN und
+                        # benutzen target_state nur fuer Status/Anzeige. Der Panda regelt
+                        # Auto intern ueber hotbedtemp und Manuell ueber set_temp.
+                        if panda_fw_104_plus and work_mode_live in (1, 2):
+                            if target_state != global_heating_state:
+                                global_heating_state = target_state
+                                last_switch_time = time.time()
 
-                            # V1.0.3 / Klipper bind:
-                            # isrunning=0 alleine reicht nicht mehr, weil die Panda-Firmware
-                            # im Klipper-Auto-Modus den Heizlauf selbst wieder starten kann.
-                            # Darum wird der aktive Lauf mit work_on=False pausiert.
-                            # WICHTIG: work_mode und set_temp bleiben unverändert, damit
-                            # Kammer-Soll und gewählter Modus NICHT verloren gehen.
-                            if global_heating_state != 20.0:
-                                global_heating_state = 20.0
-                                last_switch_time = now_stop
-
-                            if (panda_running or work_on_live in (1, True, "1")) and (now_stop - last_stop_command_time) >= 2.0:
-                                last_stop_command_time = now_stop
+                            # Falls ein alter Zustand work_on=False hinterlassen hat,
+                            # einmalig Master Enable wieder setzen.
+                            if work_on_live not in (1, True, "1") and not power_forced_off:
                                 try:
                                     if panda_ws:
                                         await panda_ws.send(json.dumps({
                                             "settings": {
-                                                "isrunning": 0,
-                                                "work_on": False
+                                                "work_mode": work_mode_live,
+                                                "work_on": True,
+                                                "set_temp": int(target)
                                             }
                                         }))
-                                        last_ws_settings.update({"isrunning": 0, "work_on": False})
+                                        last_ws_settings.update({
+                                            "work_mode": work_mode_live,
+                                            "work_on": True,
+                                            "set_temp": int(target)
+                                        })
+                                        work_on_live = True
+                                        log_event(
+                                            f"[FW1.0.4 MASTER] work_on=AN gehalten | Modus:{work_mode_live}",
+                                            force_console=True
+                                        )
                                 except Exception as e:
-                                    log_event(f"[AUTO-OFF-ERR] {e}", force_console=True)
+                                    log_event(f"[FW104-MASTER-ERR] {e}", force_console=True)
 
-                        elif (
-                            target_state != global_heating_state
-                            and (
-                                current_data.get("slicer_priority_mode", False)
-                                or time_passed > MIN_SWITCH_TIME
-                            )
-                        ) or (target_state > 50 and not panda_running):
-                            global_heating_state = target_state
-                            last_switch_time = time.time()
-                            last_stop_command_time = 0
-                            try:
-                                if panda_ws:
-                                    await panda_ws.send(json.dumps({
-                                        "settings": {
+                        else:
+                            # Legacy <=1.0.3 sowie Drying behalten die bewaehrte
+                            # aktive Start/Stop-Steuerung.
+                            if target_state == 20.0:
+                                now_stop = time.time()
+
+                                if global_heating_state != 20.0:
+                                    global_heating_state = 20.0
+                                    last_switch_time = now_stop
+
+                                if (panda_running or work_on_live in (1, True, "1")) and (now_stop - last_stop_command_time) >= 2.0:
+                                    last_stop_command_time = now_stop
+                                    try:
+                                        if panda_ws:
+                                            await panda_ws.send(json.dumps({
+                                                "settings": _settings_for_fw({
+                                                    "isrunning": 0,
+                                                    "work_on": False
+                                                })
+                                            }))
+                                            last_ws_settings.update({"isrunning": 0, "work_on": False})
+                                    except Exception as e:
+                                        log_event(f"[AUTO-OFF-ERR] {e}", force_console=True)
+
+                            elif (
+                                target_state != global_heating_state
+                                and (
+                                    current_data.get("slicer_priority_mode", False)
+                                    or time_passed > MIN_SWITCH_TIME
+                                )
+                            ) or (target_state > 50 and not panda_running):
+                                global_heating_state = target_state
+                                last_switch_time = time.time()
+                                last_stop_command_time = 0
+                                try:
+                                    if panda_ws:
+                                        await panda_ws.send(json.dumps({
+                                            "settings": _settings_for_fw({
+                                                "work_on": True,
+                                                "set_temp": int(target),
+                                                "isrunning": 1
+                                            })
+                                        }))
+                                        last_ws_settings.update({
                                             "work_on": True,
                                             "set_temp": int(target),
                                             "isrunning": 1
-                                        }
-                                    }))
-                                    last_ws_settings.update({
-                                        "work_on": True,
-                                        "set_temp": int(target),
-                                        "isrunning": 1
-                                    })
-                            except Exception as e:
-                                log_event(f"[AUTO-ON-ERR] {e}", force_console=True)
+                                        })
+                                except Exception as e:
+                                    log_event(f"[AUTO-ON-ERR] {e}", force_console=True)
 
                         fan_state = "ON" if bed_ist >= float(current_data.get("filtertemp", 30.0)) else "OFF"
-                        actual_heating = (panda_running and work_on_live in (1, True, "1"))
+                        if panda_fw_104_plus:
+                            # 1.0.4 liefert keinen echten Element-Status. Wir zeigen
+                            # deshalb den von UNSERER Regelung aktuell angeforderten
+                            # Heizlauf an. Das ist stabil und vermeidet die falsche
+                            # Interpretation von isrunning.
+                            actual_heating = (
+                                global_heating_state > 50
+                                and work_on_live in (1, True, "1")
+                            )
+                        else:
+                            actual_heating = (panda_running and work_on_live in (1, True, "1"))
 
                         mqtt_client.publish(
                             f"{MQTT_TOPIC_PREFIX}/heizung",
@@ -1425,7 +1635,7 @@ async def main():
     
     server = await asyncio.start_server(handle_panda, '0.0.0.0', 8883, ssl=ssl_ctx)
     log_event(f"[SERVER] TLS Server gestartet auf 8883 (SECLEVEL=0)")
-    print(f"\n🚀 Panda-Logic-Sync {PANDA_VERSION}\n")
+    print(f"\n🚀 Panda-Logic-Sync {PANDA_VERSION} (FW 1.0.3 + 1.0.4 compatible)\n")
     async with server: await server.serve_forever()
 
 if __name__ == "__main__":
