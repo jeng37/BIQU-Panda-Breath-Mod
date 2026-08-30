@@ -137,8 +137,10 @@ logging.basicConfig(
 )
 
 # 🔇 Externe Libraries ruhigstellen (nur wenn DEBUG=False relevant)
-#logging.getLogger("urllib3").setLevel(logging.CRITICAL)
-#logging.getLogger("websockets").setLevel(logging.CRITICAL)
+# Fremdbibliotheken nicht das systemd-Journal mit Rohpaketen fluten lassen.
+# Eigene PandaDebug-Meldungen bleiben über log_event() vollständig sichtbar.
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("websockets").setLevel(logging.WARNING)
 
 file_logger = logging.getLogger("PandaFullLog")
 file_logger.propagate = False
@@ -160,7 +162,7 @@ def log_event(msg, force_console=False):
 
     # 2️⃣ Konsole nur bei DEBUG oder Force
     if DEBUG or force_console:
-        print(f" INFO:PandaDebug:{msg}")
+        print(f" INFO:PandaDebug:{msg}", flush=True)
 
     # 3️⃣ Remote GUI Live-Log via MQTT
     # Nur senden, wenn DEBUG aktiv ist oder ein wichtiger Force-Log kommt.
@@ -218,6 +220,7 @@ async def slicer_auto_parser():
                         if current_data["slicer_priority_mode"] and new_target > 15:
                             current_data["kammer_soll"] = new_target
                             if panda_ws:
+                                last_ws_settings["set_temp"] = int(new_target)
                                 asyncio.run_coroutine_threadsafe(
                                     panda_ws.send(json.dumps({"settings": {"set_temp": int(new_target)}})),
                                     main_loop
@@ -243,6 +246,42 @@ def on_mqtt_message(client, userdata, msg):
     global desired_power_state
     global power_pending_until
     global global_heating_state
+
+    # ============================================================
+    # ✅ RETAINED MQTT STATE RESTORE
+    # ------------------------------------------------------------
+    # Der Panda setzt set_temp im AUS/Auto-Fertig-Zustand teilweise auf 0.
+    # Die GUI/HA behalten den vom Benutzer gewählten Sollwert aber korrekt
+    # als retained MQTT-State. Beim Backend-Neustart holen wir diesen Wert
+    # daher wieder in current_data zurück, BEVOR ein Modus gestartet wird.
+    # Nur echte retained Zustandsmeldungen (keine /set Commands) übernehmen.
+    if getattr(msg, "retain", False):
+        try:
+            payload = msg.payload.decode().strip()
+            restore_map = {
+                f"{MQTT_TOPIC_PREFIX}/soll": ("kammer_soll", 1.0),
+                f"{MQTT_TOPIC_PREFIX}/limit": ("bett_limit", 1.0),
+                f"{MQTT_TOPIC_PREFIX}/filtertemp": ("filtertemp", 0.0),
+                f"{MQTT_TOPIC_PREFIX}/dry_temp": ("filament_temp", 0.0),
+                f"{MQTT_TOPIC_PREFIX}/dry_time": ("filament_timer", 0.0),
+            }
+            if msg.topic in restore_map:
+                key, minimum = restore_map[msg.topic]
+                value = float(payload)
+                if value >= minimum:
+                    current_data[key] = value
+                    if key == "kammer_soll":
+                        ha_memory["kammer_soll"] = value
+                    elif key == "bett_limit":
+                        ha_memory["bett_limit"] = value
+                    log_event(
+                        f"[MQTT-RESTORE] {key}={value:g} aus retained {msg.topic}",
+                        force_console=True
+                    )
+                return
+        except Exception as e:
+            log_event(f"[MQTT-RESTORE-ERR] {msg.topic}: {e}", force_console=True)
+
     # ============================================================
     # ✅ UNLOCK LOGIK (Muss VOR dem Lock-Check kommen!)
     # ------------------------------------------------------------
@@ -289,6 +328,11 @@ def on_mqtt_message(client, userdata, msg):
                 current_data["kammer_soll"] = slicer_val
 
             if panda_ws:
+                last_ws_settings.update({
+                    "set_temp": int(slicer_val),
+                    "work_on": True,
+                    "isrunning": 1
+                })
                 asyncio.run_coroutine_threadsafe(
                     panda_ws.send(json.dumps({
                         "settings": {
@@ -323,6 +367,9 @@ def on_mqtt_message(client, userdata, msg):
         global_lock = True    
         heating_locked = True 
         global_heating_state = 20.0  # 🔥 FIX: Heizung SOFORT logisch ausschalten
+        # Panda sendet bei laufendem Betrieb oft nur warehouse_temper zurück.
+        # Deshalb den zuletzt bekannten Settings-Stand auch bei eigenen Befehlen pflegen.
+        last_ws_settings.update({"isrunning": 0, "work_on": False, "work_mode": 0, "set_temp": 0})
 
         async def stop_flow():
             if panda_ws:
@@ -352,14 +399,30 @@ def on_mqtt_message(client, userdata, msg):
             if panda_ws:
                 await panda_ws.send(json.dumps({"settings": {"isrunning": 0}}))
                 await asyncio.sleep(0.2)
+                # current_data enthält den gewünschten HA/GUI-Sollwert.
+                # Falls der Panda nach AUS/Neustart set_temp=0 meldet, darf
+                # daraus NIEMALS ein manueller 0°C-Sollwert werden.
+                manual_target = float(current_data.get("kammer_soll", 0) or 0)
+                if manual_target <= 0:
+                    manual_target = 45.0
+                current_data["kammer_soll"] = manual_target
+                manual_target = int(manual_target)
+                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/soll", manual_target, retain=True)
+
                 await panda_ws.send(json.dumps({
                     "settings": {
                         "work_mode": 2,
                         "work_on": True,
-                        "set_temp": int(current_data.get("kammer_soll", 45)),
+                        "set_temp": manual_target,
                         "isrunning": 1
                     }
                 }))
+                last_ws_settings.update({
+                    "work_mode": 2,
+                    "work_on": True,
+                    "set_temp": manual_target,
+                    "isrunning": 1
+                })
 
         asyncio.run_coroutine_threadsafe(flow(), main_loop)
         return
@@ -374,18 +437,59 @@ def on_mqtt_message(client, userdata, msg):
         current_data["slicer_priority_mode"] = False
 
         async def flow():
+            global global_heating_state
             if panda_ws:
+                # AUTO darf beim Moduswechsel die Heizung NICHT blind einschalten.
+                # Erst stoppen, dann anhand derselben Auto-Regeln entscheiden,
+                # ob der Heizlauf wirklich gestartet werden muss.
                 await panda_ws.send(json.dumps({"settings": {"isrunning": 0}}))
+                last_ws_settings["isrunning"] = 0
                 await asyncio.sleep(0.1)
+
+                auto_target = float(current_data.get("kammer_soll", 0) or 0)
+                if auto_target <= 0:
+                    auto_target = 30.0
+                current_data["kammer_soll"] = auto_target
+                auto_target = int(auto_target)
+                mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/soll", auto_target, retain=True)
+
+                auto_ist = float(current_data.get("kammer_ist", 0.0))
+                bed_ist = float(current_data.get("bed_temp", 0.0))
+                bed_limit = float(current_data.get("bett_limit", 50.0))
+
+                # Gleiche Entscheidung wie in der laufenden AUTO-Regelung:
+                # Nur heizen, wenn das Bett ueber dem Limit liegt UND die
+                # Kammer unterhalb der Hysterese-Einschaltschwelle liegt.
+                should_run = (
+                    bed_ist > bed_limit
+                    and auto_ist < (auto_target - HYSTERESE)
+                )
+
                 await panda_ws.send(json.dumps({
                     "settings": {
                         "work_mode": 1,
-                        "work_on": True,
-                        "set_temp": int(current_data.get("kammer_soll", 30)),
-                        "isrunning": 1
+                        "work_on": bool(should_run),
+                        "set_temp": auto_target,
+                        "isrunning": 1 if should_run else 0
                     },
                     "ui_action": "auto"
                 }))
+
+                last_ws_settings.update({
+                    "work_mode": 1,
+                    "work_on": bool(should_run),
+                    "set_temp": auto_target,
+                    "isrunning": 1 if should_run else 0
+                })
+
+                global_heating_state = 85.0 if should_run else 20.0
+
+                log_event(
+                    f"[AUTO-ENTRY] Bed:{bed_ist:.1f}/{bed_limit:.1f}C | "
+                    f"Kammer:{auto_ist:.1f}/{auto_target}C | "
+                    f"Heizung:{'AN' if should_run else 'AUS'}",
+                    force_console=True
+                )
 
         asyncio.run_coroutine_threadsafe(flow(), main_loop)
         return
@@ -417,6 +521,7 @@ def on_mqtt_message(client, userdata, msg):
                         "isrunning": 1
                     }
                 }))
+                last_ws_settings.update({"work_mode": 3, "work_on": True, "isrunning": 1})
 
         asyncio.run_coroutine_threadsafe(flow(), main_loop)
         return
@@ -425,6 +530,10 @@ def on_mqtt_message(client, userdata, msg):
     if msg.topic == f"{MQTT_TOPIC_PREFIX}/work_on/set":
         payload = msg.payload.decode().strip().lower()
         is_on = payload in ("on", "1", "true")
+        if is_on:
+            last_ws_settings.update({"work_on": True, "isrunning": 1})
+        else:
+            last_ws_settings.update({"isrunning": 0, "work_on": False, "work_mode": 0})
         async def p_flow():
             if panda_ws:
                 if not is_on:
@@ -456,6 +565,7 @@ def on_mqtt_message(client, userdata, msg):
             log_event(">>> PANDA POWER OFF <<<", force_console=True)
             heating_locked = True
             power_forced_off = True
+            last_ws_settings.update({"isrunning": 0, "work_mode": 0, "work_on": False})
 
             async def hard_power_off():
                 try:
@@ -488,6 +598,7 @@ def on_mqtt_message(client, userdata, msg):
             log_event(">>> PANDA POWER ON <<<", force_console=True)
             heating_locked = False
             power_forced_off = False
+            last_ws_settings.update({"work_on": True})
 
             async def power_on():
                 try:
@@ -529,6 +640,7 @@ def on_mqtt_message(client, userdata, msg):
             mqtt_client.publish(f"{MQTT_TOPIC_PREFIX}/soll", int(current_data.get("kammer_soll", 0)), retain=True)
             return
         current_data[data_key] = val
+        last_ws_settings[key] = int(val)
         if panda_ws:
             asyncio.run_coroutine_threadsafe(
                 panda_ws.send(json.dumps({"settings": {key: int(val)}})),
@@ -538,12 +650,20 @@ def on_mqtt_message(client, userdata, msg):
     except Exception as e:
         log_event(f"[TEMP-SET-ERR] {e}", force_console=True)
 
+def on_mqtt_connect(client, userdata, flags, reason_code, properties):
+    # Bei JEDEM Connect/Reconnect erneut abonnieren. Sonst bleibt die TCP-Verbindung
+    # nach einem Broker-Neustart zwar ESTABLISHED, aber Befehle kommen nicht mehr an.
+    client.subscribe(f"{MQTT_TOPIC_PREFIX}/#")
+    log_event(f"[MQTT] Connected/Reconnected ({reason_code}) -> subscribed {MQTT_TOPIC_PREFIX}/#", force_console=True)
+
+
 def setup_mqtt():
     client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, client_id=f"PandaNative_{PRINTER_SN}")
     client.username_pw_set(MQTT_USER, MQTT_PASS)
+    client.on_connect = on_mqtt_connect
     client.on_message = on_mqtt_message
+    client.reconnect_delay_set(min_delay=1, max_delay=30)
     client.connect(MQTT_BROKER, 1883, 60)
-    client.subscribe(f"{MQTT_TOPIC_PREFIX}/#")
     client.loop_start()
     return client
 
@@ -976,6 +1096,7 @@ async def update_limits_from_ws():
                                                 "work_on": False
                                             }
                                         }))
+                                        last_ws_settings.update({"isrunning": 0, "work_on": False})
                                 except Exception as e:
                                     log_event(f"[AUTO-OFF-ERR] {e}", force_console=True)
 
@@ -998,6 +1119,11 @@ async def update_limits_from_ws():
                                             "isrunning": 1
                                         }
                                     }))
+                                    last_ws_settings.update({
+                                        "work_on": True,
+                                        "set_temp": int(target),
+                                        "isrunning": 1
+                                    })
                             except Exception as e:
                                 log_event(f"[AUTO-ON-ERR] {e}", force_console=True)
 
